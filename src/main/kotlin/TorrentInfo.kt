@@ -1,4 +1,5 @@
 import utils.fp.Result
+import utils.hash
 import java.math.BigInteger
 
 data class TorrentInfo(
@@ -6,11 +7,32 @@ data class TorrentInfo(
     val pieceLength: Long,
     val length: Long,
     val name: String,
-)
+) {
+
+    val bencodePiece: String
+        get() {
+            val bytes = pieces.toByteArray()
+            return "${bytes.size}:$bytes"
+        }
+
+    val bencodeRepresentation: String
+        get() = "d6:lengthi${length}e4:name${name.length}:${name}12:piece lengthi${pieceLength}e6:pieces${bencodePiece}e"
+}
 
 data class TorrentSeed(
     val info: TorrentInfo,
     val announce: String,
+)
+
+typealias InfoHash = List<Byte>
+
+data class TorrentFile(
+    val announce: String,
+    val infoHash: InfoHash,
+    val pieceHashes: List<InfoHash>,
+    val pieceLength: Long,
+    val length: Long,
+    val name: String,
 )
 
 fun DictionaryLiteral.getIntAttr(attr: String): Result<BigInteger> = this.of[ByteStringLiteral(attr)]?.let {
@@ -66,6 +88,29 @@ fun Result<Bencode>.convertToTorrentSeed(): Result<TorrentSeed> =
         }
     }.mapFailure("Encountered error while trying to convert the bencode to seed")
 
+fun Result<TorrentSeed>.getInfoHash(): Result<InfoHash> =
+    this.flatMap { seed ->
+        Result(seed.info.bencodeRepresentation.toByteArray().hash())
+    }.mapFailure("Encountered error while trying to hash the info dictionary")
+
+fun Result<TorrentSeed>.getPieceHashes(): Result<List<InfoHash>> =
+    this.flatMap { seed ->
+        val hashes = seed.info.pieces.toByteArray().toList()
+        check (hashes.size % 20 == 0)
+        Result(hashes.chunked(20))
+    }.mapFailure("Encountered error while trying to split piece into hashes")
+
+fun Result<TorrentSeed>.convertToTorrentFile(): Result<TorrentFile> =
+    this.flatMap { seed ->
+        this.getInfoHash().flatMap { infoHash ->
+            this.getPieceHashes().flatMap { pieceHash ->
+                Result(TorrentFile(
+                    seed.announce, infoHash, pieceHash, seed.info.pieceLength, seed.info.length, seed.info.name))
+            }
+        }
+    }
+
+
 fun main() {
     val message = "d8:announce41:http://bttracker.debian.org:6969/announce7:comment35:" +
             "\"Debian CD from cdimage.debian.org\"13:creation datei1573903810e9:httpse" +
@@ -74,11 +119,11 @@ fun main() {
             "nst.iso145:https://cdimage.debian.org/cdimage/archive/10.2.0//srv/cdbuild" +
             "er.debian.org/dst/deb-cd/weekly-builds/amd64/iso-cd/debian-10.2.0-amd64-n" +
             "etinst.isoe4:infod6:lengthi351272960e4:name31:debian-10.2.0-amd64-netinst" +
-            ".iso12:piece lengthi262144e6:pieces8:xxxxxxxxee"
+            ".iso12:piece lengthi262144e6:pieces8:abcdefghabcdefghabcdee"
 
     val result = Decoder(message).decode()
 
-    val torrent = result.convertToTorrentSeed()
+    val torrent = result.convertToTorrentSeed().convertToTorrentFile()
 
     println("Convert finished")
 }
