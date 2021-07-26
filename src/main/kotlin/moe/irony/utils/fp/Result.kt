@@ -1,4 +1,4 @@
-package utils.fp
+package moe.irony.utils.fp
 
 import java.io.Serializable
 
@@ -12,6 +12,15 @@ sealed class Result<out A>: Serializable {
     abstract fun <B> flatMap(f: (A) -> Result<B>): Result<B>
 
     abstract fun isEmpty(): Boolean
+
+    /**
+     *
+     */
+    fun unsafeGet(): A = when (this) {
+        is Success -> this.value
+        is Failure -> throw IllegalStateException("Attempt to unwrap a Result<> but got an exception:", this.exception)
+        is Empty -> throw IllegalStateException("Attempt to unwrap a Result<> which is empty")
+    }
 
     fun getOrElse(defaultValue: @UnsafeVariance A): A = when (this) {
         is Success -> this.value

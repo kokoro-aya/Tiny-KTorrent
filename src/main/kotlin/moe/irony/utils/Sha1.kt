@@ -1,4 +1,4 @@
-package utils
+package moe.irony.utils
 
 import java.security.MessageDigest
 

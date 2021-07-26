@@ -9,10 +9,13 @@ version = "1.0-SNAPSHOT"
 
 repositories {
     mavenCentral()
+    maven {
+        setUrl("https://jitpack.io")
+    }
 }
 
 dependencies {
-    implementation("com.github.h0tk3y.betterParse:better-parse:0.4.2")
+    implementation("com.github.ascclemens:khttp:0.1.0")
     implementation("org.junit.jupiter:junit-jupiter:5.7.0")
     testImplementation("org.junit.platform:junit-platform-commons:1.5.2")
     testImplementation(kotlin("test"))

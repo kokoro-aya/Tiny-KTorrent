@@ -1,4 +1,4 @@
-import org.junit.jupiter.api.Assertions.assertTrue
+import moe.irony.bencode_decoder.*
 import org.junit.jupiter.api.Test
 import java.math.BigInteger
 import kotlin.test.assertEquals

@@ -1,5 +1,7 @@
-import utils.fp.Result
-import utils.hash
+package moe.irony.bencode_decoder
+
+import moe.irony.utils.fp.Result
+import moe.irony.utils.hash
 import java.math.BigInteger
 
 data class TorrentInfo(
@@ -110,7 +112,6 @@ fun Result<TorrentSeed>.convertToTorrentFile(): Result<TorrentFile> =
         }
     }
 
-
 fun main() {
     val message = "d8:announce41:http://bttracker.debian.org:6969/announce7:comment35:" +
             "\"Debian CD from cdimage.debian.org\"13:creation datei1573903810e9:httpse" +
@@ -119,11 +120,21 @@ fun main() {
             "nst.iso145:https://cdimage.debian.org/cdimage/archive/10.2.0//srv/cdbuild" +
             "er.debian.org/dst/deb-cd/weekly-builds/amd64/iso-cd/debian-10.2.0-amd64-n" +
             "etinst.isoe4:infod6:lengthi351272960e4:name31:debian-10.2.0-amd64-netinst" +
-            ".iso12:piece lengthi262144e6:pieces8:abcdefghabcdefghabcdee"
+            ".iso12:piece lengthi262144e6:pieces20:abcdefghabcdefghabcdee"
 
     val result = Decoder(message).decode()
 
     val torrent = result.convertToTorrentSeed().convertToTorrentFile()
 
-    println("Convert finished")
+    val real = torrent.unsafeGet()
+
+    val infohash = real.infoHash
+    val pieceshash = real.pieceHashes
+
+    println(infohash)
+    println(pieceshash)
+
+    println(infohash.map { it.toInt().toChar() }.joinToString(""))
+    println(pieceshash[0].map { it.toInt().toChar()}.joinToString(""))
+
 }

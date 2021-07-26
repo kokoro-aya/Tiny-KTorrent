@@ -1,5 +1,6 @@
-import java.math.BigDecimal
-import utils.fp.Result
+package moe.irony.bencode_decoder
+
+import moe.irony.utils.fp.Result
 import java.math.BigInteger
 
 // 借鉴了 kotlin-bencode （https://github.com/ciferkey/kotlin-bencode）
