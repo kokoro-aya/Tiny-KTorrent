@@ -3,10 +3,18 @@ package moe.irony.utils
 import java.security.MessageDigest
 
 // https://gist.github.com/lovubuntu/164b6b9021f5ba54cefc67f60f7a1a25
-fun ByteArray.hash(): List<Byte> {
-    val bytes = this
+//fun ByteArray.hash(): List<Byte> {
+//    val bytes = this
+//    val md = MessageDigest.getInstance("SHA-1")
+//    return md.digest(bytes).toList()
+//}
+
+fun String.hash(): String {
+    val bytes = this.map { it.code.toByte() }.toByteArray() // 不能用toByteArray(Charsets.ASCII)方法，会出问题
     val md = MessageDigest.getInstance("SHA-1")
-    return md.digest(bytes).toList()
+    return md.digest(bytes).fold("") { str, it ->
+        str + "%02X".format(it)
+    }
 }
 
 fun main(args: Array<String>) {
@@ -25,6 +33,33 @@ fun main(args: Array<String>) {
         0xEA, 0xBD, 0xFF, 0x66, 0xC6, 0x79, 0x4C, 0x29, 0xE4, 0xF9, 0xD0, 0xF3, 0xB9, 0x65
     ).map { it.toByte() }
 
-    println(bytes.toByteArray().hash())
-    println(bytes.toByteArray().hash().fold("") { str, it -> str + "%02x".format(it) })
+    bytes.forEachIndexed { i, it ->
+        if (i % 24 == 0) println()
+        print("${"%02x".format(it)} ")
+    }
+
+    println()
+
+//    println(bytes.toByteArray().hash())
+//    println(bytes.toByteArray().hash().fold("") { str, it -> str + "%02x".format(it) })
+
+    val sstr = bytes.map { it.toInt().toChar() }.joinToString("")
+    println(sstr)
+    sstr.map { it.code.toByte() }.forEachIndexed { i, it ->
+        if (i % 24 == 0) println()
+        print("${"%02x".format(it)} ")
+    }
+
+    println()
+    println(sstr.hash())
+
+//    val str = String(bytes.toByteArray(), Charsets.US_ASCII)
+//    str.toByteArray(Charsets.US_ASCII).forEachIndexed { i, it ->
+//        if (i % 24 == 0) println()
+//        print("${"%02x".format(it)} ")
+//    }
+//    println(str)
+//    println(str.hash())
+
+
 }

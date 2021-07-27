@@ -1,12 +1,7 @@
 package moe.irony.utils
 
-import moe.irony.bencode_decoder.InfoHash
 import java.net.URLEncoder
 import kotlin.experimental.or
-import kotlin.math.floor
-
-val InfoHash.stringRepr: String
-    get() = this.map { it.toInt().toChar() }.joinToString("")
 
 fun String.urlEncode(): String {
     return URLEncoder.encode(this, "utf-8")
@@ -55,4 +50,14 @@ fun Long.formatTime(): String {
     } else {
         "$mm:$ss"
     }
+}
+
+// 这里有个坑，必须用UByte
+fun List<UByte>.bytesToInt(): Int = this.map { it.toInt() }.fold(0) { left, right ->
+    left * 256 + right
+}
+
+fun main() {
+    val a = listOf<UByte>(0x1a.toUByte(), 0xe1.toUByte())
+    println(a.bytesToInt())
 }

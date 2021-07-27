@@ -1,15 +1,32 @@
 package moe.irony.bencode_decoder
 
+import khttp.post
 import moe.irony.utils.fp.Result
 import java.math.BigInteger
 
 // 借鉴了 kotlin-bencode （https://github.com/ciferkey/kotlin-bencode）
-sealed class Bencode
+sealed class Bencode {
+    abstract fun encode(): String
+}
 
-data class IntLiteral(val value: BigInteger): Bencode()
-data class ByteStringLiteral(val content: String): Bencode()
-data class ListLiteral(val of: MutableList<Bencode>): Bencode()
-data class DictionaryLiteral(val of: MutableMap<Bencode, Bencode>): Bencode()
+data class IntLiteral(val value: BigInteger): Bencode() {
+    override fun encode(): String = INTEGER_MARKER + value.toString(10) + ENDING_MARKER
+}
+data class ByteStringLiteral(val content: String): Bencode() {
+    override fun encode(): String = content.length.toString() + SEPARATOR + content
+}
+data class ListLiteral(val of: MutableList<Bencode>): Bencode() {
+    override fun encode(): String {
+        return of.map { it.encode() }
+            .joinToString("", prefix = "$LIST_MARKER", postfix = "$ENDING_MARKER")
+    }
+}
+data class DictionaryLiteral(val of: MutableMap<Bencode, Bencode>): Bencode() {
+    override fun encode(): String {
+        return of.entries.map { it.key.encode() + it.value.encode() }
+            .joinToString("", prefix = "$DICT_MARKER", postfix = "$ENDING_MARKER")
+    }
+}
 
 private const val INTEGER_MARKER = 'i'
 private const val LIST_MARKER = 'l'
@@ -23,9 +40,9 @@ class Decoder(val input: String) {
 
     fun decode(): Result<Bencode> {
         if (iter.hasNext()) {
-            val marker = iter.peek()
+            val marker = iter.nextChar()
             return when (marker) {
-                in '0'..'9' -> decodeString()
+                in '0'..'9' -> decodeString(marker)
                 INTEGER_MARKER -> decodeInteger()
                 LIST_MARKER -> decodeList()
                 DICT_MARKER -> decodeDict()
@@ -35,11 +52,11 @@ class Decoder(val input: String) {
         return Result.failure("Nothing to decode")
     }
 
-    private fun decodeString(): Result<Bencode> {
+    private fun decodeString(firstDigit: Char): Result<Bencode> {
         return iter.readWhile { it.isDigit() }
             .flatMap { length ->
                 iter.consume(SEPARATOR).flatMap {
-                    iter.readFor(length.toInt()).map {
+                    iter.readFor("$firstDigit$length".toInt()).map {
                         ByteStringLiteral(it)
                     }
                 }
@@ -47,17 +64,15 @@ class Decoder(val input: String) {
     }
 
     private fun decodeInteger(): Result<Bencode> {
-        return iter.consume(INTEGER_MARKER).flatMap {
-            iter.readUntil(ENDING_MARKER).flatMap {
-                Result.of {
-                    IntLiteral(it.toBigInteger())
-                }
+        return iter.readUntil(ENDING_MARKER).flatMap {
+            Result.of {
+                IntLiteral(it.toBigInteger())
             }
         }
     }
 
     private fun decodeList(): Result<Bencode> {
-        return iter.consume(LIST_MARKER).flatMap {
+        return iter.instance().flatMap {
             Result.of {
                 val items = mutableListOf<Bencode>()
                 while (!iter.consume(ENDING_MARKER).getOrElse(false)) {
@@ -71,7 +86,7 @@ class Decoder(val input: String) {
     }
 
     private fun decodeDict(): Result<Bencode> {
-        return iter.consume(DICT_MARKER).flatMap {
+        return iter.instance().flatMap {
             Result.of {
                 val items = mutableMapOf<Bencode, Bencode>()
                 while (!iter.consume(ENDING_MARKER).getOrElse(false)) {
@@ -131,6 +146,9 @@ fun CharIterator.consume(char: Char): Result<Boolean> {
         Result.failure("Could not consume '$char'")
     }
 }
+fun CharIterator.instance(): Result<CharIterator> {
+    return Result(this)
+}
 fun CharIterator.readFor(size: Int): Result<String> {
     return Result.of {
         val sub = mutableListOf<Char>()
@@ -148,16 +166,18 @@ inline fun <V, U> Result<V>.fanout(crossinline other: () -> Result<U>): Result<P
 }
 
 fun main() {
-    val message = "d8:announce41:http://bttracker.debian.org:6969/announce7:comment35:" +
-            "\"Debian CD from cdimage.debian.org\"13:creation datei1573903810e9:httpse" +
-            "edsl145:https://cdimage.debian.org/cdimage/release/10.2.0//srv/cdbuilder." +
-            "debian.org/dst/deb-cd/weekly-builds/amd64/iso-cd/debian-10.2.0-amd64-neti" +
-            "nst.iso145:https://cdimage.debian.org/cdimage/archive/10.2.0//srv/cdbuild" +
-            "er.debian.org/dst/deb-cd/weekly-builds/amd64/iso-cd/debian-10.2.0-amd64-n" +
-            "etinst.isoe4:infod6:lengthi351272960e4:name31:debian-10.2.0-amd64-netinst" +
-            ".iso12:piece lengthi262144e6:pieces8:xxxxxxxxee"
+//    val message = "d8:announce41:http://bttracker.debian.org:6969/announce7:comment35:" +
+//            "\"Debian CD from cdimage.debian.org\"13:creation datei1573903810e9:httpse" +
+//            "edsl145:https://cdimage.debian.org/cdimage/release/10.2.0//srv/cdbuilder." +
+//            "debian.org/dst/deb-cd/weekly-builds/amd64/iso-cd/debian-10.2.0-amd64-neti" +
+//            "nst.iso145:https://cdimage.debian.org/cdimage/archive/10.2.0//srv/cdbuild" +
+//            "er.debian.org/dst/deb-cd/weekly-builds/amd64/iso-cd/debian-10.2.0-amd64-n" +
+//            "etinst.isoe4:infod6:lengthi351272960e4:name31:debian-10.2.0-amd64-netinst" +
+//            ".iso12:piece lengthi262144e6:pieces8:xxxxxxxxee"
+//
+//    val result = Decoder(message).decode()
 
-    val result = Decoder(message).decode()
-
-    println("Simulation completed")
+    val b = "d2:cccce"
+    val bencode = Decoder(b).decode()
+    val unwrapped = bencode.unsafeGet()
 }

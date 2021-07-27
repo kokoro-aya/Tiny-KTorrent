@@ -39,4 +39,14 @@ class TestParser {
         decoded.forEach({ assertEquals(it, expected) }, {}, {})
     }
 
+    @Test
+    fun testEmptyString() {
+        val input = "d4:size0:e"
+        val decoded = Decoder(input).decode()
+        val expected = DictionaryLiteral(
+            mutableMapOf(ByteStringLiteral("size") to ByteStringLiteral(""))
+        )
+        decoded.forEach({ assertEquals(it, expected) }, {}, {})
+    }
+
 }
