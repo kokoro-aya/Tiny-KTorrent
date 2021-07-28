@@ -12,8 +12,8 @@ import java.security.MessageDigest
 fun String.hash(): String {
     val bytes = this.map { it.code.toByte() }.toByteArray() // 不能用toByteArray(Charsets.ASCII)方法，会出问题
     val md = MessageDigest.getInstance("SHA-1")
-    return md.digest(bytes).fold("") { str, it ->
-        str + "%02X".format(it)
+    return md.digest(bytes).fold("") { left, right ->
+        left + "%02X".format(right)
     }
 }
 

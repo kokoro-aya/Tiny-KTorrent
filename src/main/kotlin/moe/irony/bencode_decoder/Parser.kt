@@ -1,6 +1,5 @@
 package moe.irony.bencode_decoder
 
-import khttp.post
 import moe.irony.utils.fp.Result
 import java.io.File
 import java.math.BigInteger

@@ -3,8 +3,20 @@ package moe.irony.utils
 import java.net.URLEncoder
 import kotlin.experimental.or
 
-fun String.urlEncode(): String {
-    return URLEncoder.encode(this, "utf-8")
+fun String.hexToUrlEncode(): String {
+    check (length % 2 == 0) { "Must have an even length" }
+    return this.chunked(2)
+        .joinToString("") { it.toInt(16).urlEncode() }
+}
+
+private fun Int.urlEncode(): String {
+    return when {
+        this.toChar() in '0' .. '9'
+                || this.toChar() in 'a' .. 'z'
+                || this.toChar() in 'A' .. 'Z'
+                || this.toChar() in ".-_~" -> "${this.toChar()}"
+        else -> "%${"%02X".format(this)}"
+    }
 }
 
 fun String.hexDecode(): String {
@@ -58,6 +70,9 @@ fun List<UByte>.bytesToInt(): Int = this.map { it.toInt() }.fold(0) { left, righ
 }
 
 fun main() {
-    val a = listOf<UByte>(0x1a.toUByte(), 0xe1.toUByte())
-    println(a.bytesToInt())
+//    val a = listOf<UByte>(0x1a.toUByte(), 0xe1.toUByte())
+//    println(a.bytesToInt())
+
+    val a = "90493C18F577D24D5646C5075193BF57FAABDCF6"
+    println(a.hexToUrlEncode())
 }

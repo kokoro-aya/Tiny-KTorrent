@@ -4,6 +4,8 @@ import moe.irony.utils.fp.Result
 import moe.irony.utils.hash
 import java.io.File
 import java.math.BigInteger
+import java.nio.file.Files
+import java.nio.file.Path
 
 data class TorrentInfo(
     val pieces: String,
@@ -48,6 +50,13 @@ fun DictionaryLiteral.getDictAttr(attr: String): Result<DictionaryLiteral> = thi
     }
 } ?: Result.failure("Cannot get DictAttr $attr from dictionary")
 
+fun DictionaryLiteral.getListAttr(attr: String): Result<ListLiteral> = this.of[ByteStringLiteral(attr)]?.let {
+    when (it) {
+        is ListLiteral -> Result(it)
+        else -> null
+    }
+} ?: Result.failure("Cannot get ListAttr $attr from dictionary")
+
 fun Result<DictionaryLiteral>.getInfo(): Result<TorrentInfo> =
     this.flatMap { dict ->
         dict.getIntAttr("length").flatMap { length ->
@@ -84,7 +93,8 @@ fun Result<Bencode>.convertToTorrentSeed(): Result<TorrentSeed> =
 
 fun Result<DictionaryLiteral>.getInfoHash(): Result<String> =
     this.flatMap { info ->
-        Result(info.encode().hash())
+        val enc = info.encode()
+        Result(enc.hash())
     }.mapFailure("Encountered error while trying to hash the info dictionary")
 
 fun Result<TorrentSeed>.getPieceHashes(): Result<List<String>> =
@@ -102,8 +112,11 @@ fun Result<TorrentSeed>.convertToTorrentFile(): Result<TorrentFile> =
         }
     }
 
-fun main() {
-    val message = File("MoralPsychHandbook.pdf.torrent").readBytes().map { it.toChar() }.joinToString("")
+fun main() { // 这里是测试用文件出问题了。。。以及最后还是不能用ASCII
+    val file = File("MoralPsychHandbook.pdf.torrent")
+    val bytes = file.readBytes()
+    val chars = bytes.map { it.toChar() }
+    val message = chars.joinToString("")
 
     val result = Decoder(message).decode()
 
@@ -119,11 +132,11 @@ fun main() {
     }
     println()
 
-    println(result.getInfoHash())
+    println((result as Result<DictionaryLiteral>).unsafeGet().getDictAttr("info").getInfoHash())
 
 }
 
 fun Result<DictionaryLiteral>.getInfoRepr(): Result<String> =
     this.flatMap { info ->
         Result(info.encode())
-    }.mapFailure("Encountered error while trying to hash the info dictionary")
+    }.mapFailure("Debug [getInfoRepr]")

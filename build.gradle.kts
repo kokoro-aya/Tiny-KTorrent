@@ -15,7 +15,8 @@ repositories {
 }
 
 dependencies {
-    implementation("com.github.ascclemens:khttp:0.1.0")
+    implementation("io.ktor:ktor-client-core:1.6.1")
+    implementation("io.ktor:ktor-client-cio:1.6.1")
     implementation("org.junit.jupiter:junit-jupiter:5.7.0")
     testImplementation("org.junit.platform:junit-platform-commons:1.5.2")
     testImplementation(kotlin("test"))

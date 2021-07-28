@@ -1,14 +1,25 @@
 package moe.irony.peer_wire
 
-import khttp.get
+import io.ktor.client.HttpClient
+import io.ktor.client.call.receive
+import io.ktor.client.engine.cio.CIO
+import io.ktor.client.features.HttpTimeout
+import io.ktor.client.features.get
+import io.ktor.client.features.timeout
+import io.ktor.client.request.get
+import io.ktor.client.request.parameter
+import io.ktor.client.request.request
+import io.ktor.client.statement.HttpResponse
+import io.ktor.http.HttpMethod
+import io.ktor.http.HttpStatusCode
+import io.ktor.http.UrlEncodingOption
+import kotlinx.coroutines.runBlocking
 import moe.irony.bencode_decoder.*
 import moe.irony.utils.bytesToInt
-import moe.irony.utils.hexDecode
+import moe.irony.utils.hexToUrlEncode
 import java.io.File
 
-data class Peer(val ip: String, val port: Int)
-
-const val TRACKER_TIMEOUT = 15.000
+const val TRACKER_TIMEOUT = 15_000L
 
 class PeerRetriever(
     private val peerId: String,
@@ -16,6 +27,7 @@ class PeerRetriever(
     private val infoHash: String,
     val port: Int,
     val fileSize: Long,
+    val client: HttpClient,
 ) {
 
     private fun decodeResponse(resp: String): List<Peer> {
@@ -24,33 +36,33 @@ class PeerRetriever(
         val bencode = Decoder(resp).decode()
         val peerResp = bencode.convertToPeerResponse().unsafeGet()
 
-        val peers = mutableListOf<Peer>()
+        val peers = peerResp.peers
 
-        if (true) {
-            val peerInfoSize = 6
-            val peersString = peerResp.peers
-            if (peersString.size % 6 != 0) {
-                throw IllegalStateException("Received malformed 'peers' from tracker. [ 'peers' length needs to be divisible by 6 ]")
-            }
-            val peerNum = peersString.size / peerInfoSize
-
-            for (i in 0 until peerNum) {
-                val offset = i * peerInfoSize
-                val ip = buildString {
-                    append(peersString[offset])
-                    append('.')
-                    append(peersString[offset + 1])
-                    append('.')
-                    append(peersString[offset + 2])
-                    append('.')
-                    append(peersString[offset + 3])
-                }
-                val port = peersString.slice(offset + 4 until offset + 6).bytesToInt()
-                peers.add(Peer(ip, port))
-            }
-        } else {
-            throw NotImplementedError("The impl of non-compact case is unsupported")
-        }
+//        if (true) {
+//            val peerInfoSize = 6
+//            val peersString = peerResp.peers
+//            if (peersString.size % 6 != 0) {
+//                throw IllegalStateException("Received malformed 'peers' from tracker. [ 'peers' length needs to be divisible by 6 ]")
+//            }
+//            val peerNum = peersString.size / peerInfoSize
+//
+//            for (i in 0 until peerNum) {
+//                val offset = i * peerInfoSize
+//                val ip = buildString {
+//                    append(peersString[offset])
+//                    append('.')
+//                    append(peersString[offset + 1])
+//                    append('.')
+//                    append(peersString[offset + 2])
+//                    append('.')
+//                    append(peersString[offset + 3])
+//                }
+//                val port = peersString.slice(offset + 4 until offset + 6).bytesToInt()
+//                peers.add(Peer(ip, port))
+//            }
+//        } else {
+//            throw NotImplementedError("The impl of non-compact case is unsupported")
+//        }
 
         println("Decode tracker response: SUCCESS")
         println("Number of peers discovered: ${peers.size}")
@@ -58,38 +70,50 @@ class PeerRetriever(
         return peers
     }
 
-    fun retrievePeers(byteDownloaded: Long = 0L): List<Peer> {
+    suspend fun retrievePeers(byteDownloaded: Long = 0L): List<Peer> {
         check(byteDownloaded >= 0) { "Downloaded bytes must be positive" }
-        buildString {
+        println(buildString {
             appendLine("Retrieving peers from $announceUrl with the following parameters")
             appendLine("info_hash: $infoHash")
+            appendLine("info_hash_encoded: ${infoHash.hexToUrlEncode()}")
             appendLine("peer_id: $peerId")
             appendLine("port: $port")
             appendLine("uploaded: 0")
             appendLine("downloaded: $byteDownloaded")
             appendLine("left: ${fileSize - byteDownloaded}")
             appendLine("compact: 1")
+        })
+
+        val rsp = client.get<HttpResponse>(urlString = announceUrl) {
+            url {
+                parameters.urlEncodingOption = UrlEncodingOption.NO_ENCODING
+                parameters.append("info_hash", infoHash.hexToUrlEncode())
+                parameters.append("peer_id", peerId)
+                parameters.append("port", this@PeerRetriever.port.toString()) // 这里的port会和ktor内部的参数clash
+                parameters.append("uploaded", "0")
+                parameters.append("downloaded", byteDownloaded.toString())
+                parameters.append("left", "${fileSize - byteDownloaded}")
+                parameters.append("compact", "1")
+
+            }
+            timeout {
+                requestTimeoutMillis = TRACKER_TIMEOUT
+            }
         }
 
-        val rsp = get(url = announceUrl, params = mapOf(
-            "info_hash" to infoHash.hexDecode(),
-            "peer_id" to peerId,
-            "port" to port.toString(),
-            "uploaded" to "0",
-            "downloaded" to byteDownloaded.toString(),
-            "left" to "${fileSize - byteDownloaded}",
-            "compact" to "1",
-        ), timeout = TRACKER_TIMEOUT )
+        val recv = rsp.receive<ByteArray>().map { it.toChar() }.joinToString("")
 
-        return when (rsp.statusCode) {
-            200 -> {
+        return when (rsp.status) {
+            HttpStatusCode.OK -> {
                 println("Retrieve response from tracker: SUCCESS")
                 println("Response > ")
-                println(rsp.text)
-                decodeResponse(rsp.text)
+                println(recv)
+                decodeResponse(recv)
             }
             else -> {
-                println("Retrieving response from tracker: FAILED [ ${rsp.statusCode}: ${rsp.text} ]")
+                println("Retrieving response from tracker: FAILED")
+                println("Status > ${rsp.status}")
+                println("Message > $recv")
                 listOf()
             }
         }
@@ -97,7 +121,9 @@ class PeerRetriever(
 }
 
 fun main() {
-    val torrent = File("MoralPsychHandbook.pdf.torrent").readText(Charsets.US_ASCII)
+    val torrent = File("MoralPsychHandbook.pdf.torrent").readBytes()
+        .map { it.toChar() }
+        .joinToString("")
     val bencode = Decoder(torrent).decode()
 
     val seed = bencode.convertToTorrentSeed()
@@ -105,18 +131,30 @@ fun main() {
 
     val realfile = file.unsafeGet()
 
+//    println(realfile.infoHash)
+//    println(realfile.infoHash.hexToUrlEncode())
+
+    val client = HttpClient(CIO) {
+        install(HttpTimeout)
+    }
+
     val peersRetriver = PeerRetriever(
         peerId = "-UT2021-114514191081",
         announceUrl = realfile.announce,
         infoHash = realfile.infoHash,
-        port = 12450,
-        fileSize = realfile.length
+        port = 6881,
+        fileSize = realfile.length,
+        client = client,
     )
 
-    val li = peersRetriver.retrievePeers(0)
-    li.forEach {
-        println(it)
+    runBlocking {
+        val li = peersRetriver.retrievePeers(0)
+        li.forEach {
+            println(it)
+        }
     }
 
     println("Convert finished")
 }
+
+// khttp的坑，%号自己会被再encode一次
