@@ -10,14 +10,7 @@ data class TorrentInfo(
     val pieceLength: Long,
     val length: Long,
     val name: String,
-) {
-
-    val bencodePiece: String
-        get() {
-            val bytes = pieces.toByteArray()
-            return "${bytes.size}:$bytes"
-        }
-}
+)
 
 data class TorrentSeed(
     val info: TorrentInfo,
@@ -110,21 +103,27 @@ fun Result<TorrentSeed>.convertToTorrentFile(): Result<TorrentFile> =
     }
 
 fun main() {
-    val message = File("MoralPsychHandbook.pdf.torrent").readText(Charsets.US_ASCII)
+    val message = File("MoralPsychHandbook.pdf.torrent").readBytes().map { it.toChar() }.joinToString("")
 
     val result = Decoder(message).decode()
 
-    val torrent = result.convertToTorrentSeed().convertToTorrentFile()
+    val repr = (result as Result<DictionaryLiteral>)
+        .unsafeGet().getDictAttr("info")
+        .unsafeGet().getStringAttr("pieces")
 
-    val real = torrent.unsafeGet()
+//    val repr = (result as Result<DictionaryLiteral>).unsafeGet().getDictAttr("info").getInfoRepr()
 
-    val infohash = real.infoHash
-    val pieceshash = real.pieceHashes
+    repr.unsafeGet().map { it.code.toByte() }.map { "%02x".format(it) }.forEachIndexed { i, it ->
+        if (i % 25 == 0) println()
+        print("$it ")
+    }
+    println()
 
-    println(infohash)
-    println(pieceshash)
-
-    println(infohash.map { it.code.toChar() }.joinToString(""))
-    println(pieceshash[0].map { it.code.toChar()}.joinToString(""))
+    println(result.getInfoHash())
 
 }
+
+fun Result<DictionaryLiteral>.getInfoRepr(): Result<String> =
+    this.flatMap { info ->
+        Result(info.encode())
+    }.mapFailure("Encountered error while trying to hash the info dictionary")
