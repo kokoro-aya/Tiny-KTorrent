@@ -3,15 +3,17 @@ package moe.irony.pieces
 import moe.irony.bencode_decoder.TorrentFile
 import moe.irony.connect.Block
 import moe.irony.connect.BlockStatus
+import moe.irony.utils.fp.Option
 import moe.irony.utils.fp.unfold
 import moe.irony.utils.hasPiece
 import moe.irony.utils.setPiece
+import java.io.File
+import java.io.FileOutputStream
+import java.io.RandomAccessFile
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.ConcurrentLinkedDeque
 import java.util.concurrent.ConcurrentMap
-import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicReference
-import kotlin.math.ceil
 import kotlin.math.min
 
 const val BLOCK_SIZE = 16384L
@@ -25,9 +27,9 @@ data class PendingRequest(
 )
 
 class PieceManager(
-    val torrentFile: TorrentFile,
-    val downloadPath: String,
-    val maximumConnections: Int
+    private val torrentFile: TorrentFile,
+    downloadPath: String,
+    private val maximumConnections: Int
 ) {
 
     private val peers: ConcurrentMap<String, ByteArray> = ConcurrentHashMap()
@@ -43,18 +45,29 @@ class PieceManager(
     private val totalPieces = torrentFile.pieceHashes.size
     private val pieceLength = torrentFile.pieceLength
 
+    private val downloadedFile: RandomAccessFile
+
     init {
-        startingTime = System.currentTimeMillis()
         allPieces = initiatePieces()
         missingPieces.addAll(allPieces.map { AtomicReference(it) })
+
+        val file = File(downloadPath)
+        val raf = RandomAccessFile(file, "rw")
+        raf.setLength(torrentFile.length)
+
+        downloadedFile = raf
+
+        startingTime = System.currentTimeMillis()
+
+
     }
 
     private fun Long.expandWithRem(divideBy: Long): List<Long> = unfold(this) {
-            if (it < 0)
-                null
-            else
-                min(it, divideBy) to it - divideBy
-        }
+        if (it < 0)
+            null
+        else
+            min(it, divideBy) to it - divideBy
+    }
 
     private fun initiatePieces(): List<Piece> {
         // totalPieces:                         总共有多少个piece
@@ -84,18 +97,36 @@ class PieceManager(
     }
 
     private fun expiredRequest(peerId: String): Block? {
-
+        val currentTime = System.currentTimeMillis()
+        return peers[peerId] ?.let { ba ->
+            pendingRequests
+                .map { it.get() }
+                .filter { ba.hasPiece(it.block.piece) }
+                .firstOrNull { currentTime - it.timestamp >= MAX_PENDING_TIME }
+                ?.also {
+                    println("Block ${it.block.offset} from piece ${it.block.piece} has expired.")
+                }?.block
+        }
     }
 
     private fun nextOngoing(peerId: String): Block? {
-
+        return peers[peerId] ?.let { ba ->
+            onGoingPieces.map { it.get() }
+                .firstOrNull { ba.hasPiece(it.index) }
+                ?.nextRequest()
+                ?.also {
+                    val currentTime = System.currentTimeMillis()
+                    val newPendingRequest = PendingRequest(block = it, timestamp = currentTime)
+                    pendingRequests.add(AtomicReference(newPendingRequest))
+                }
+        }
     }
 
     private fun ConcurrentLinkedDeque<AtomicReference<Piece>>.getRarestPiece(): AtomicReference<Piece>? {
         val rarest = this.map {
             val piece = it
             val peerFields = peers.values
-            piece to peerFields.map { it.hasPiece(piece.get().index) }.size
+            piece to peerFields.filter { it.hasPiece(piece.get().index) }.size
         }
             .filter { it.second > 0 } // 如果没有任何peer有资源的话就无法下载
             .sortedWith { o1, o2 -> o2.second - o1.second }.firstOrNull()?.first
@@ -105,22 +136,32 @@ class PieceManager(
     }
 
     private fun Piece.writeToFile() {
-
+        val pos = this.index * torrentFile.pieceLength
+        val data = this.getData().map { it.code.toByte() }.toByteArray()
+        val len = data.size
+        downloadedFile.write(data, pos.toInt(), len)
     }
 
     private fun displayProgressBar() {
-
+        // TODO()
     }
 
     private fun trackProgress() {
-
+        // TODO()
     }
 
     val isComplete: Boolean
         get() = finishedPieces.size == totalPieces
 
     fun blockReceived(peerId: String, pieceIndex: Int, blockOffset: Int, data: String) {
-
+        println("Received block $blockOffset from piece $pieceIndex from peer $peerId")
+        val removedRequest = pendingRequests.firstOrNull {
+            val bl = it.get().block
+            bl.piece == pieceIndex && bl.offset == blockOffset
+        } ?.also {
+            pendingRequests.remove(it)
+        } ?: throw IllegalStateException("Received a block that's not in pendingRequest")
+        // TODO()
     }
 
     fun addPeer(peerId: String, bitField: String) {
@@ -154,8 +195,30 @@ class PieceManager(
 
 
     fun nextRequest(peerId: String): Block? {
-        return peers[peerId] ?.let {
-            missingPieces.getRarestPiece()?.get()?.nextRequest()
+        fun missingPiecesEmpty(): Option<ConcurrentLinkedDeque<AtomicReference<Piece>>> = when (missingPieces.isNotEmpty()) {
+            true -> Option.Some(missingPieces)
+            else -> Option.None
         }
+        fun peersContainsIdEmpty(): Option<String> = when (peers.containsKey(peerId)) {
+            true -> Option.Some(peerId)
+            else -> Option.None
+        }
+        fun expiredRequestOpt(): Option<Block> = when (val er = expiredRequest(peerId)) {
+            null -> Option.None
+            else -> Option.Some(er)
+        }
+        fun nextOngoingOpt(): Option<Block> = when (val no = nextOngoing(peerId)) {
+            null -> Option.None
+            else -> Option.Some(no)
+        }
+        fun getRarestPieceOpt(missingPieces: Option<ConcurrentLinkedDeque<AtomicReference<Piece>>>): Option<Block> =
+            missingPieces
+                .flatMap { Option.toOption(it.getRarestPiece()?.get()?.nextRequest()) }
+
+        return missingPiecesEmpty().flatMap { cld ->
+            peersContainsIdEmpty().flatMap {
+                expiredRequestOpt().mapNone(::nextOngoingOpt).mapNone { getRarestPieceOpt(Option.Some(cld)) }
+            }
+        }.toNullable()
     }
 }
