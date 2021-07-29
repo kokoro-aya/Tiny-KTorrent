@@ -4,10 +4,12 @@ import io.ktor.client.HttpClient
 import io.ktor.client.call.receive
 import io.ktor.client.engine.cio.CIO
 import io.ktor.client.features.HttpTimeout
+import io.ktor.client.features.defaultRequest
 import io.ktor.client.features.get
 import io.ktor.client.features.timeout
 import io.ktor.client.request.get
 import io.ktor.client.request.parameter
+import io.ktor.client.request.port
 import io.ktor.client.request.request
 import io.ktor.client.statement.HttpResponse
 import io.ktor.http.HttpMethod
@@ -19,7 +21,7 @@ import moe.irony.utils.bytesToInt
 import moe.irony.utils.hexToUrlEncode
 import java.io.File
 
-const val TRACKER_TIMEOUT = 15_000L
+const val TRACKER_TIMEOUT = 30_000L
 
 class PeerRetriever(
     private val peerId: String,
@@ -81,19 +83,19 @@ class PeerRetriever(
             appendLine("uploaded: 0")
             appendLine("downloaded: $byteDownloaded")
             appendLine("left: ${fileSize - byteDownloaded}")
-            appendLine("compact: 1")
+            appendLine("compact: 0") // 不知为何返回的永远是不compact的，所以就改为0吧
         })
 
         val rsp = client.get<HttpResponse>(urlString = announceUrl) {
             url {
-                parameters.urlEncodingOption = UrlEncodingOption.NO_ENCODING
+                parameters.urlEncodingOption = UrlEncodingOption.NO_ENCODING // 关闭把parameter自动urlencode的机制
                 parameters.append("info_hash", infoHash.hexToUrlEncode())
                 parameters.append("peer_id", peerId)
                 parameters.append("port", this@PeerRetriever.port.toString()) // 这里的port会和ktor内部的参数clash
                 parameters.append("uploaded", "0")
                 parameters.append("downloaded", byteDownloaded.toString())
                 parameters.append("left", "${fileSize - byteDownloaded}")
-                parameters.append("compact", "1")
+                parameters.append("compact", "0")
 
             }
             timeout {

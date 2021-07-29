@@ -87,7 +87,7 @@ fun Result<Bencode>.convertToTorrentSeed(): Result<TorrentSeed> =
     this.flatMap {
         when (it) {
             is DictionaryLiteral -> Result(it).getSeed()
-            else -> Result.failure("Wrong type, not a torrent seed")
+            else -> Result.failure("Wrong type, not a torrent seed [Torrent seed must be a dictionary]")
         }
     }.mapFailure("Encountered error while trying to convert the bencode to seed")
 

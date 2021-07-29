@@ -40,7 +40,7 @@ class Decoder(val input: String) {
 
     fun decode(): Result<Bencode> {
         if (iter.hasNext()) {
-            val marker = iter.nextChar()
+            val marker = iter.nextChar() // 改成每次必定读取至少一个字符以避免无限循环
             return when (marker) {
                 in '0'..'9' -> decodeString(marker)
                 INTEGER_MARKER -> decodeInteger()
