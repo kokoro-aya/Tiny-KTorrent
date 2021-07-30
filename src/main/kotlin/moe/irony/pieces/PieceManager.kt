@@ -1,20 +1,24 @@
 package moe.irony.pieces
 
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import moe.irony.bencode_decoder.TorrentFile
 import moe.irony.connect.Block
 import moe.irony.connect.BlockStatus
+import moe.irony.utils.formatTime
 import moe.irony.utils.fp.Option
 import moe.irony.utils.fp.unfold
 import moe.irony.utils.hasPiece
 import moe.irony.utils.setPiece
 import java.io.File
-import java.io.FileOutputStream
 import java.io.RandomAccessFile
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.ConcurrentLinkedDeque
 import java.util.concurrent.ConcurrentMap
-import java.util.concurrent.atomic.AtomicReference
+import kotlin.math.ceil
 import kotlin.math.min
+import kotlin.math.pow
 
 const val BLOCK_SIZE = 16384L
 const val MAX_PENDING_TIME = 5_000
@@ -32,24 +36,28 @@ class PieceManager(
     private val maximumConnections: Int
 ) {
 
+    private val mutex = Mutex()
+
     private val peers: ConcurrentMap<String, ByteArray> = ConcurrentHashMap()
     private val allPieces: List<Piece>
 
-    private val missingPieces = ConcurrentLinkedDeque<AtomicReference<Piece>>()
-    private val onGoingPieces = ConcurrentLinkedDeque<AtomicReference<Piece>>()
+    private val missingPieces = ConcurrentLinkedDeque<Piece>()
+    private val onGoingPieces = ConcurrentLinkedDeque<Piece>()
     private val finishedPieces = ConcurrentLinkedDeque<String>()
 
-    private val pendingRequests = ConcurrentLinkedDeque<AtomicReference<PendingRequest>>()
+    private val pendingRequests = ConcurrentLinkedDeque<PendingRequest>()
 
     private val startingTime: Long
     private val totalPieces = torrentFile.pieceHashes.size
     private val pieceLength = torrentFile.pieceLength
 
+    private var piecesDownloadedInInterval: Int = 0
+
     private val downloadedFile: RandomAccessFile
 
     init {
         allPieces = initiatePieces()
-        missingPieces.addAll(allPieces.map { AtomicReference(it) })
+        missingPieces.addAll(allPieces.map { it })
 
         val file = File(downloadPath)
         val raf = RandomAccessFile(file, "rw")
@@ -100,7 +108,6 @@ class PieceManager(
         val currentTime = System.currentTimeMillis()
         return peers[peerId] ?.let { ba ->
             pendingRequests
-                .map { it.get() }
                 .filter { ba.hasPiece(it.block.piece) }
                 .firstOrNull { currentTime - it.timestamp >= MAX_PENDING_TIME }
                 ?.also {
@@ -111,22 +118,22 @@ class PieceManager(
 
     private fun nextOngoing(peerId: String): Block? {
         return peers[peerId] ?.let { ba ->
-            onGoingPieces.map { it.get() }
+            onGoingPieces
                 .firstOrNull { ba.hasPiece(it.index) }
                 ?.nextRequest()
                 ?.also {
                     val currentTime = System.currentTimeMillis()
                     val newPendingRequest = PendingRequest(block = it, timestamp = currentTime)
-                    pendingRequests.add(AtomicReference(newPendingRequest))
+                    pendingRequests.add(newPendingRequest)
                 }
         }
     }
 
-    private fun ConcurrentLinkedDeque<AtomicReference<Piece>>.getRarestPiece(): AtomicReference<Piece>? {
+    private fun ConcurrentLinkedDeque<Piece>.getRarestPiece(): Piece? {
         val rarest = this.map {
             val piece = it
             val peerFields = peers.values
-            piece to peerFields.filter { it.hasPiece(piece.get().index) }.size
+            piece to peerFields.filter { it.hasPiece(piece.index) }.size
         }
             .filter { it.second > 0 } // 如果没有任何peer有资源的话就无法下载
             .sortedWith { o1, o2 -> o2.second - o1.second }.firstOrNull()?.first
@@ -142,60 +149,153 @@ class PieceManager(
         downloadedFile.write(data, pos.toInt(), len)
     }
 
-    private fun displayProgressBar() {
-        // TODO()
+    private suspend fun displayProgressBar() {
+        mutex.withLock {
+            val downloadedPieces = finishedPieces.size
+            val downloadedLength = pieceLength * piecesDownloadedInInterval
+
+            val avgDownloadSpeed = downloadedLength.toDouble() / PROGRESS_DISPLAY_INTERVAL.toDouble()
+            val avgDownloadSpeedInMBS = avgDownloadSpeed / (2.0).pow(20)
+
+            val timePerPiece = PROGRESS_DISPLAY_INTERVAL.toDouble() / piecesDownloadedInInterval.toDouble()
+            val remainingTime = ceil(timePerPiece * (totalPieces - downloadedPieces)).toLong()
+
+            val progress = downloadedPieces.toDouble() / totalPieces.toDouble()
+            val pos = (PROGRESS_BAR_WIDTH * progress).toInt()
+
+            val currentTime = System.currentTimeMillis()
+            val timeSinceStart = currentTime - startingTime
+
+            buildString {
+                append("[Peers: ${peers.size} / $maximumConnections, ")
+                append("%.2f".format(avgDownloadSpeedInMBS))
+                append(" MiB/s, ")
+                append("ETA: ${remainingTime.formatTime()}]")
+                appendLine()
+
+                append("[")
+                for (i in 0 until PROGRESS_BAR_WIDTH) {
+                    append(
+                        when {
+                            i < pos -> "="
+                            i == pos -> ">"
+                            else -> " "
+                        }
+                    )
+                }
+                append("]")
+
+                append("$downloadedPieces / $totalPieces")
+                append("[${"%.2f".format(progress * 100)}]")
+
+                append("in ${timeSinceStart.formatTime()}")
+                appendLine()
+
+                if (isComplete())
+                    appendLine()
+            }.let { print(it) }
+        }
     }
 
-    private fun trackProgress() {
-        // TODO()
+    private suspend fun trackProgress() {
+        delay(1000L)
+        while (!isComplete()) {
+            displayProgressBar()
+            piecesDownloadedInInterval = 0
+            delay(1000L)
+        }
     }
 
-    val isComplete: Boolean
-        get() = finishedPieces.size == totalPieces
+    suspend fun isComplete(): Boolean {
+        return mutex.withLock {
+            finishedPieces.size == totalPieces
+        }
+    }
 
-    fun blockReceived(peerId: String, pieceIndex: Int, blockOffset: Int, data: String) {
+    suspend fun blockReceived(peerId: String, pieceIndex: Int, blockOffset: Int, data: String) {
         println("Received block $blockOffset from piece $pieceIndex from peer $peerId")
+        mutex.lock()
         val removedRequest = pendingRequests.firstOrNull {
-            val bl = it.get().block
+            val bl = it.block
             bl.piece == pieceIndex && bl.offset == blockOffset
-        } ?.also {
+        }?.also {
             pendingRequests.remove(it)
         } ?: throw IllegalStateException("Received a block that's not in pendingRequest")
+        val targetPiece = onGoingPieces.firstOrNull { it.index == pieceIndex }
+            ?: throw IllegalStateException("Received block does not belong to any ongoing piece")
+        mutex.unlock()
+
+        targetPiece.blockReceived(blockOffset, data)
+        if (targetPiece.isComplete) {
+            when (targetPiece.isHashMatching) {
+                true -> {
+                    targetPiece.writeToFile()
+                    mutex.lock()
+                    onGoingPieces.remove(targetPiece)
+                    finishedPieces.add("P#${targetPiece.index}")
+                    piecesDownloadedInInterval++
+                    mutex.unlock()
+
+                    buildString {
+                        append("(${"%.2f".format(finishedPieces.size.toDouble() / totalPieces.toDouble() * 100)}% ")
+                        append("${finishedPieces.size} / $totalPieces Pieces downloaded...")
+                        appendLine()
+                    }.let { print(it) }
+                }
+                false -> {
+                    targetPiece.reset()
+                    println("Hash mismatch for piece ${targetPiece.index}")
+                }
+            }
+        }
         // TODO()
     }
 
-    fun addPeer(peerId: String, bitField: String) {
+    suspend fun addPeer(peerId: String, bitField: String) {
         if (peers.size < maximumConnections) {
-            peers[peerId] = bitField.map { it.code.toByte() }.toByteArray() // 这里又会出现问题么
+            mutex.withLock {
+                peers[peerId] = bitField.map { it.code.toByte() }.toByteArray() // 这里又会出现问题么
+            }
             println("Number of connections: ${peers.size} / $maximumConnections")
         }
     }
 
-    fun removePeer(peerId: String) {
-        if (isComplete) return
+    suspend fun removePeer(peerId: String) {
+        if (isComplete()) return
+        mutex.lock()
         when (peers.containsKey(peerId)) {
             true -> {
                 peers -= peerId
+                mutex.unlock()
                 println("Number of connections: ${peers.size} / $maximumConnections")
             }
-            else -> throw IllegalStateException("Attempting to remove a peer $peerId with whom a connection has not been established")
+            else -> {
+                mutex.unlock()
+                throw IllegalStateException("Attempting to remove a peer $peerId with whom a connection has not been established")
+            }
         }
     }
 
-    fun updatePeer(peerId: String, index: Int) {
+    suspend fun updatePeer(peerId: String, index: Int) {
+        mutex.lock()
         if (peers.containsKey(peerId)) {
             peers[peerId]!!.setPiece(index)
+            mutex.unlock()
         } else {
+            mutex.unlock()
             throw IllegalStateException("Connection has not been established with peer $peerId")
         }
     }
 
-    val bytesDownloaded: Long
-        get() = finishedPieces.size * pieceLength
+    suspend fun bytesDownloaded(): Long {
+        return mutex.withLock {
+            finishedPieces.size * pieceLength
+        }
+    }
 
 
-    fun nextRequest(peerId: String): Block? {
-        fun missingPiecesEmpty(): Option<ConcurrentLinkedDeque<AtomicReference<Piece>>> = when (missingPieces.isNotEmpty()) {
+    suspend fun nextRequest(peerId: String): Block? {
+        fun missingPiecesEmpty(): Option<ConcurrentLinkedDeque<Piece>> = when (missingPieces.isNotEmpty()) {
             true -> Option.Some(missingPieces)
             else -> Option.None
         }
@@ -211,14 +311,16 @@ class PieceManager(
             null -> Option.None
             else -> Option.Some(no)
         }
-        fun getRarestPieceOpt(missingPieces: Option<ConcurrentLinkedDeque<AtomicReference<Piece>>>): Option<Block> =
+        fun getRarestPieceOpt(missingPieces: Option<ConcurrentLinkedDeque<Piece>>): Option<Block> =
             missingPieces
-                .flatMap { Option.toOption(it.getRarestPiece()?.get()?.nextRequest()) }
+                .flatMap { Option.toOption(it.getRarestPiece()?.nextRequest()) }
 
-        return missingPiecesEmpty().flatMap { cld ->
-            peersContainsIdEmpty().flatMap {
-                expiredRequestOpt().mapNone(::nextOngoingOpt).mapNone { getRarestPieceOpt(Option.Some(cld)) }
-            }
-        }.toNullable()
+        mutex.withLock {
+            return missingPiecesEmpty().flatMap { cld ->
+                peersContainsIdEmpty().flatMap {
+                    expiredRequestOpt().mapNone(::nextOngoingOpt).mapNone { getRarestPieceOpt(Option.Some(cld)) }
+                }
+            }.toNullable()
+        }
     }
 }
