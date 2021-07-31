@@ -21,7 +21,7 @@ import kotlin.math.min
 import kotlin.math.pow
 
 const val BLOCK_SIZE = 16384L
-const val MAX_PENDING_TIME = 5_000
+const val MAX_PENDING_TIME = 10_000
 const val PROGRESS_BAR_WIDTH = 80
 const val PROGRESS_DISPLAY_INTERVAL = 500
 
@@ -137,8 +137,10 @@ class PieceManager(
         }
             .filter { it.second > 0 } // 如果没有任何peer有资源的话就无法下载
             .sortedWith { o1, o2 -> o2.second - o1.second }.firstOrNull()?.first
-        if (rarest != null)
+        if (rarest != null) {
             this.remove(rarest)
+            onGoingPieces.add(rarest)
+        }
         return rarest
     }
 

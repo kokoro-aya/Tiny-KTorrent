@@ -1,5 +1,6 @@
 package moe.irony.utils
 
+import moe.irony.utils.fp.unfold
 import java.net.URLEncoder
 import kotlin.experimental.or
 
@@ -69,10 +70,23 @@ fun List<UByte>.bytesToInt(): Int = this.map { it.toInt() }.fold(0) { left, righ
     left * 256 + right
 }
 
+fun Int.intToBytes(): List<UByte> = unfold(this) {
+    if (it <= 1)
+        null
+    else
+        (it % 256).toUByte() to it / 256
+}.reversed()
+
 fun main() {
 //    val a = listOf<UByte>(0x1a.toUByte(), 0xe1.toUByte())
 //    println(a.bytesToInt())
 
-    val a = "90493C18F577D24D5646C5075193BF57FAABDCF6"
-    println(a.hexToUrlEncode())
+//    val a = "90493C18F577D24D5646C5075193BF57FAABDCF6"
+//    println(a.hexToUrlEncode())
+
+    val a = arrayOf(104, 105, 106, 107).map { it.toUByte() }
+    val b = a.bytesToInt()
+    println(b)
+    val c = b.intToBytes()
+    println(c)
 }
