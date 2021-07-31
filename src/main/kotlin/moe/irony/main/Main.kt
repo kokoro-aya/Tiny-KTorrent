@@ -7,9 +7,13 @@ import kotlinx.cli.required
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import moe.irony.client.TorrentClient
+import java.nio.file.Files
+import java.nio.file.Paths
 
 const val PROGRAM_NAME = "./client"
+const val LOG_PATH_KEY = "LOG_PATH"
 
 fun main(args: Array<String>) {
     println("Tiny KTorrent - A simple multi-thread BitTorrent client written in Kotlin")
@@ -27,17 +31,20 @@ fun main(args: Array<String>) {
         .option(ArgType.Boolean, shortName = "l", description = "Enable logging")
         .default(false)
     val logfile by optionsParser
-        .option(ArgType.String, shortName = "f", description = "Path to the log file")
-        .default("../logs/bitclient.log")
+        .option(ArgType.String, shortName = "f", description = "Path to the log directory")
+        .default("./logs/ktorrent")
 
     optionsParser.parse(args)
+
+    System.setProperty(LOG_PATH_KEY, logfile)
+
+    Files.createDirectories(Paths.get(output))
 
     val client = TorrentClient(
         workersNum = threadnum,
         enableLogging = logging,
-        logFilePath = logfile,
     )
-    CoroutineScope(Dispatchers.Main).launch {
+    runBlocking {
         client.downloadFile(
             torrentFilePath = seed,
             downloadDirectory = output

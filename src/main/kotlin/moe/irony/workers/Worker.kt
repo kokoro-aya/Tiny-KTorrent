@@ -7,6 +7,7 @@ import io.ktor.network.sockets.openWriteChannel
 import io.ktor.utils.io.ByteReadChannel
 import io.ktor.utils.io.ByteWriteChannel
 import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.delay
 import moe.irony.bencode_decoder.Peer
 import moe.irony.connect.*
 import moe.irony.pieces.PieceManager
@@ -85,7 +86,8 @@ class Worker(
         Log.info { "Receive handshake reply from peer: SUCCESS" }
 
         val receivedInfoHash = reply.slice(INFO_HASH_STARTING_POS until INFO_HASH_STARTING_POS + HASH_LENGTH)
-        if (receivedInfoHash != infoHash) {
+        if (receivedInfoHash.map { it.code.toByte() }
+            != infoHash.hexDecode().map { it.code.toByte() }) { // 很麻烦。。。但是不这样就没法匹配了（
             socket.close()
             throw RuntimeException("Perform handshake with peer ${peer.ip}:" +
                     " FAILED [Received mismatching info hash]" +
@@ -172,8 +174,10 @@ class Worker(
 
     suspend fun receiveMessage(bufferSize: Int = 0): BitTorrentMessage {
         val reply = recvData(inputChannel, bufferSize)
-        if (reply.isEmpty())
+        if (reply.isEmpty()) {
+            Log.info { "Received message 'keep alive' from peer [${peer.ip}]" }
             return BitTorrentMessage(MessageId.KEEP_ALIVE, reply)
+        }
         val messageId = when (reply[0].code) {
             0 -> MessageId.CHOKE
             1 -> MessageId.UNCHOKE
@@ -224,6 +228,13 @@ class Worker(
                                 val begin = payload.slice(4 until 8).map { it.code.toByte().toUByte() }.bytesToInt()
                                 val blockData = payload.substring(8)
                                 pieceManager.blockReceived(peerId, index, begin, blockData)
+                            }
+                            MessageId.KEEP_ALIVE -> {
+                                Log.info { "Received keep_alive, waiting for next request attempt" }
+                                for (i in 120 downTo 1) {
+                                    Log.debug { "waiting for two minutes, $i seconds remains" }
+                                    delay(1000L)
+                                }
                             }
                             else -> {
                                 Log.error { "Unsupported BitMessageId: ${message.id}, aborted" }

@@ -22,7 +22,6 @@ const val PEER_QUERY_INTERVAL = 90_000
 class TorrentClient(
     private val workersNum: Int = 8,
     enableLogging: Boolean = true,
-    logFilePath: String = "logs/client.log"
 ) {
     private val peerId: String
     private val peers: Channel<Peer>
@@ -68,6 +67,11 @@ class TorrentClient(
         PeerRetriever(peerId, announceUrl, infoHash, PORT, fileSize, client)
             .retrievePeers(pieceManager.bytesDownloaded())
             .forEach { peers.send(it) }
+
+        if (peers.isEmpty) {
+            Log.error { "No peer is available for this seed, download aborted" }
+            return
+        }
 
         workers.addAll((1 .. workersNum)
             .map { Worker(peers, peerId, infoHash, pieceManager) }

@@ -5,6 +5,7 @@ import ch.qos.logback.core.FileAppender
 import moe.irony.utils.fp.unfold
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
+import java.nio.ByteBuffer
 import java.security.AccessController.getContext
 import kotlin.experimental.or
 import kotlin.reflect.KFunction
@@ -83,7 +84,7 @@ fun Int.intToBytes(): List<UByte> = unfold(this) {
         (it % 256).toUByte() to it / 256
 }.reversed()
 
-class Log {
+class Log { // https://stackoverflow.com/questions/40398072/singleton-with-parameter-in-kotlin#comment107750187_45943282
     companion object {
         @Volatile private var isLogEnabled: Boolean = false
 
@@ -141,17 +142,23 @@ fun main() {
 //    val c = b.intToBytes()
 //    println(c)
 
-    val path = "logs/client/"
+//    val path = "logs/client/"
+//
+//    val LOG_PATH_KEY = "LOG_PATH"
+//
+//    System.setProperty(LOG_PATH_KEY, path)
+//
+//    Log.enableLog()
+//
+//    Log.info("production") { "Start log test" }
+//    Log.debug("test") { "w00t!" }
+//    Log.error("err") { "error!" }
+//    Log.warn("warning") { "warning!" }
 
-    val LOG_PATH_KEY = "LOG_PATH"
+    val i = -4194304
 
-    System.setProperty(LOG_PATH_KEY, path)
+    val j = ByteBuffer.allocate(4).putInt(i).array()
 
-    Log.enableLog()
 
-    Log.info("production") { "Start log test" }
-    Log.debug("test") { "w00t!" }
-    Log.error("err") { "error!" }
-    Log.warn("warning") { "warning!" }
 
 }
