@@ -6,6 +6,7 @@ import kotlinx.coroutines.sync.withLock
 import moe.irony.bencode_decoder.TorrentFile
 import moe.irony.connect.Block
 import moe.irony.connect.BlockStatus
+import moe.irony.utils.Log
 import moe.irony.utils.formatTime
 import moe.irony.utils.fp.Option
 import moe.irony.utils.fp.unfold
@@ -111,7 +112,7 @@ class PieceManager(
                 .filter { ba.hasPiece(it.block.piece) }
                 .firstOrNull { currentTime - it.timestamp >= MAX_PENDING_TIME }
                 ?.also {
-                    println("Block ${it.block.offset} from piece ${it.block.piece} has expired.")
+                    Log.info { "Block ${it.block.offset} from piece ${it.block.piece} has expired." }
                 }?.block
         }
     }
@@ -215,7 +216,7 @@ class PieceManager(
     }
 
     suspend fun blockReceived(peerId: String, pieceIndex: Int, blockOffset: Int, data: String) {
-        println("Received block $blockOffset from piece $pieceIndex from peer $peerId")
+        Log.info { "Received block $blockOffset from piece $pieceIndex from peer $peerId" }
         mutex.lock()
         val removedRequest = pendingRequests.firstOrNull {
             val bl = it.block
@@ -242,11 +243,11 @@ class PieceManager(
                         append("(${"%.2f".format(finishedPieces.size.toDouble() / totalPieces.toDouble() * 100)}% ")
                         append("${finishedPieces.size} / $totalPieces Pieces downloaded...")
                         appendLine()
-                    }.let { print(it) }
+                    }.let { Log.info { it } }
                 }
                 false -> {
                     targetPiece.reset()
-                    println("Hash mismatch for piece ${targetPiece.index}")
+                    Log.info { "Hash mismatch for piece ${targetPiece.index}" }
                 }
             }
         }
@@ -258,7 +259,7 @@ class PieceManager(
             mutex.withLock {
                 peers[peerId] = bitField.map { it.code.toByte() }.toByteArray() // 这里又会出现问题么
             }
-            println("Number of connections: ${peers.size} / $maximumConnections")
+            Log.info { "Number of connections: ${peers.size} / $maximumConnections" }
         }
     }
 
@@ -269,7 +270,7 @@ class PieceManager(
             true -> {
                 peers -= peerId
                 mutex.unlock()
-                println("Number of connections: ${peers.size} / $maximumConnections")
+                Log.info { "Number of connections: ${peers.size} / $maximumConnections" }
             }
             else -> {
                 mutex.unlock()

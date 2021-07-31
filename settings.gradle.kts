@@ -1,3 +1,3 @@
 
-rootProject.name = "Bencode-parser"
+rootProject.name = "Tiny-KTorrent"
 

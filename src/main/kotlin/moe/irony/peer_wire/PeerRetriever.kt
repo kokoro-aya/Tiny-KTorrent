@@ -17,6 +17,7 @@ import io.ktor.http.HttpStatusCode
 import io.ktor.http.UrlEncodingOption
 import kotlinx.coroutines.runBlocking
 import moe.irony.bencode_decoder.*
+import moe.irony.utils.Log
 import moe.irony.utils.bytesToInt
 import moe.irony.utils.hexToUrlEncode
 import java.io.File
@@ -33,7 +34,7 @@ class PeerRetriever(
 ) {
 
     private fun decodeResponse(resp: String): List<Peer> {
-        println("Decoding tracker response...")
+        Log.info { "Decoding tracker response..." }
 
         val bencode = Decoder(resp).decode()
         val peerResp = bencode.convertToPeerResponse().unsafeGet()
@@ -66,15 +67,15 @@ class PeerRetriever(
 //            throw NotImplementedError("The impl of non-compact case is unsupported")
 //        }
 
-        println("Decode tracker response: SUCCESS")
-        println("Number of peers discovered: ${peers.size}")
+        Log.info { "Decode tracker response: SUCCESS" }
+        Log.info { "Number of peers discovered: ${peers.size}" }
 
         return peers
     }
 
     suspend fun retrievePeers(byteDownloaded: Long = 0L): List<Peer> {
         check(byteDownloaded >= 0) { "Downloaded bytes must be positive" }
-        println(buildString {
+        buildString {
             appendLine("Retrieving peers from $announceUrl with the following parameters")
             appendLine("info_hash: $infoHash")
             appendLine("info_hash_encoded: ${infoHash.hexToUrlEncode()}")
@@ -84,7 +85,7 @@ class PeerRetriever(
             appendLine("downloaded: $byteDownloaded")
             appendLine("left: ${fileSize - byteDownloaded}")
             appendLine("compact: 0") // 不知为何返回的永远是不compact的，所以就改为0吧
-        })
+        }.let { Log.info { it } }
 
         val rsp = client.get<HttpResponse>(urlString = announceUrl) {
             url {
@@ -107,15 +108,16 @@ class PeerRetriever(
 
         return when (rsp.status) {
             HttpStatusCode.OK -> {
-                println("Retrieve response from tracker: SUCCESS")
-                println("Response > ")
-                println(recv)
+                Log.info { "Retrieve response from tracker: SUCCESS" }
+//                println("Response > ")
+//                println(recv)
                 decodeResponse(recv)
             }
             else -> {
-                println("Retrieving response from tracker: FAILED")
-                println("Status > ${rsp.status}")
-                println("Message > $recv")
+//                println("Retrieving response from tracker: FAILED")
+//                println("Status > ${rsp.status}")
+//                println("Message > $recv")
+                Log.info { "Retrieving response from tracker: FAILED [ ${rsp.status}: $recv ]" }
                 listOf()
             }
         }

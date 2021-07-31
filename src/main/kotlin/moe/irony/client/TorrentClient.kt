@@ -3,14 +3,14 @@ package moe.irony.client
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.cio.CIO
 import io.ktor.client.features.HttpTimeout
+import kotlinx.coroutines.*
 import kotlinx.coroutines.channels.Channel
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.runBlocking
 import moe.irony.bencode_decoder.Peer
 import moe.irony.bencode_decoder.TorrentFileParser
 import moe.irony.connect.Block
 import moe.irony.peer_wire.PeerRetriever
 import moe.irony.pieces.PieceManager
+import moe.irony.utils.Log
 import moe.irony.utils.fp.iterate
 import moe.irony.workers.Worker
 import java.util.concurrent.ConcurrentLinkedDeque
@@ -25,7 +25,7 @@ class TorrentClient(
     logFilePath: String = "logs/client.log"
 ) {
     private val peerId: String
-    private val peerQueue: ConcurrentLinkedDeque<Peer>
+    private val peers: Channel<Peer>
 
     private val workers: MutableList<Worker> = mutableListOf()
 
@@ -33,20 +33,20 @@ class TorrentClient(
         peerId = "-UT2021-" +
                 iterate(0, { Random(it).nextInt(0, 9) }, 12).joinToString("")
 
-        peerQueue = ConcurrentLinkedDeque()
+        peers = Channel(capacity = Channel.UNLIMITED)
 
         if (enableLogging) {
-            // TODO
-        } else {
-            // TODO
+            Log.enableLog()
         }
     }
 
-    fun terminate() {
-        peerQueue.addAll(List(workersNum) { Peer("0.0.0.0", "", 0) })
+    suspend fun terminate() {
+        List(workersNum) { Peer("0.0.0.0", "DUMMY", 0) }
+            .forEach { peers.send(it) }
         workers.forEach(Worker::stop)
     }
 
+    @OptIn(ExperimentalCoroutinesApi::class)
     suspend fun downloadFile(torrentFilePath: String, downloadDirectory: String) {
         println("Parsing Torrent file $torrentFilePath ...")
 
@@ -65,13 +65,12 @@ class TorrentClient(
             install(HttpTimeout)
         }
 
-        peerQueue.addAll(
-            PeerRetriever(peerId, announceUrl, infoHash, PORT, fileSize, client)
-                .retrievePeers(pieceManager.bytesDownloaded())
-        )
+        PeerRetriever(peerId, announceUrl, infoHash, PORT, fileSize, client)
+            .retrievePeers(pieceManager.bytesDownloaded())
+            .forEach { peers.send(it) }
 
         workers.addAll((1 .. workersNum)
-            .map { Worker(peerQueue, peerId, infoHash, pieceManager) }
+            .map { Worker(peers, peerId, infoHash, pieceManager) }
             .onEach {
                 it.start()
             })
@@ -83,12 +82,18 @@ class TorrentClient(
 
         while (!pieceManager.isComplete()) {
             val diff = System.currentTimeMillis() - lastPeerQuery
-            if (diff >= PEER_QUERY_INTERVAL || peerQueue.isEmpty()) {
+            if (diff >= PEER_QUERY_INTERVAL || peers.isEmpty) {
                 val peerRetriever = PeerRetriever(peerId, announceUrl, infoHash, PORT, fileSize, client)
-                val peers = peerRetriever.retrievePeers(pieceManager.bytesDownloaded())
-                if (!peerQueue.isEmpty()) {
-                    peerQueue.clear()
-                    peerQueue.addAll(peers)
+                val retrievedPeers = peerRetriever.retrievePeers(pieceManager.bytesDownloaded())
+                if (retrievedPeers.isNotEmpty()) {
+                    val removal = CoroutineScope(Dispatchers.Default).launch {
+                        while (!peers.isEmpty)
+                            peers.receive()
+                    }
+                    removal.join()
+                    retrievedPeers.forEach {
+                        peers.send(it)
+                    }
                 }
                 lastPeerQuery = System.currentTimeMillis()
             }

@@ -12,7 +12,7 @@ import moe.irony.client.TorrentClient
 const val PROGRAM_NAME = "./client"
 
 fun main(args: Array<String>) {
-    println("SimpleBitTorrentClient - A simple multi-thread BitTorrent client written in Kotlin")
+    println("Tiny KTorrent - A simple multi-thread BitTorrent client written in Kotlin")
     val optionsParser = ArgParser(PROGRAM_NAME)
     val seed by optionsParser
         .option(ArgType.String, shortName = "s", description = "Path to the Torrent Seed file")

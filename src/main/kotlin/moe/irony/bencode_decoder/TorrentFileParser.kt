@@ -1,5 +1,6 @@
 package moe.irony.bencode_decoder
 
+import moe.irony.utils.Log
 import java.io.File
 
 class TorrentFileParser(
@@ -8,7 +9,7 @@ class TorrentFileParser(
     val torrent: TorrentFile
 
     init {
-        println("Parsing Torrent file $filePath ...")
+        Log.info { "Parsing Torrent file $filePath ..." }
         val file = File(filePath).readBytes()
             .map { it.toChar() }
             .joinToString("")
@@ -17,6 +18,6 @@ class TorrentFileParser(
 
         torrent = bencode.convertToTorrentSeed().convertToTorrentFile().unsafeGet()
 
-        println("Parse Torrent file: SUCCESS")
+        Log.info { "Parse Torrent file: SUCCESS" }
     }
 }

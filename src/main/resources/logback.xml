@@ -1,0 +1,34 @@
+<configuration debug="false" scan="true" scanPeriod="15 seconds"> <!-- 要关掉debug才会不打印logback的消息 -->
+
+    <!-- https://stackoverflow.com/questions/3257154/how-to-prevent-logback-from-outputting-its-own-status-at-the-start-of-every-log -->
+    <statusListener class="ch.qos.logback.core.status.NopStatusListener" />
+
+    <appender name="console" class="ch.qos.logback.core.ConsoleAppender">
+        <filter class="ch.qos.logback.classic.filter.ThresholdFilter">
+            <level>debug</level>
+        </filter>
+        <encoder>
+            <pattern>%date %level [%thread] %logger{10} [%file:%line] %msg%n</pattern>
+        </encoder>
+    </appender>
+
+    <appender name="info" class="ch.qos.logback.core.rolling.RollingFileAppender">
+        <rollingPolicy class="ch.qos.logback.core.rolling.TimeBasedRollingPolicy">
+            <fileNamePattern>${LOG_PATH}/log/ktorrent-%d{yyyy-MM-dd}.log</fileNamePattern>
+        </rollingPolicy>
+        <append>true</append>
+        <encoder>
+            <pattern>%date %level [%thread] %logger{10} [%file:%line] %msg%n</pattern>
+            <charset>utf-8</charset>
+        </encoder>
+    </appender>
+
+    <root level="debug">
+        <appender-ref ref="console" />
+        <appender-ref ref="info" />
+    </root>
+</configuration>
+
+<!-- 参考 -->
+<!-- https://www.scalyr.com/blog/getting-started-quickly-kotlin-logging/ -->
+<!-- https://blog.csdn.net/wang_rk/article/details/108053886 -->

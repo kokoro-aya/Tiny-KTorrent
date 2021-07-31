@@ -15,8 +15,11 @@ repositories {
 }
 
 dependencies {
+    implementation("org.jetbrains.kotlin:kotlin-reflect:1.5.21")
+
     implementation("org.slf4j:slf4j-api:1.7.32")
-    implementation("io.github.microutils:kotlin-logging-jvm:2.0.10")
+    implementation("ch.qos.logback:logback-classic:1.2.5")
+    implementation("ch.qos.logback:logback-core:1.2.5")
 
     implementation("org.jetbrains.kotlinx:kotlinx-cli:0.3.2")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.5.1")
@@ -32,5 +35,5 @@ tasks.test {
 }
 
 tasks.withType<KotlinCompile>() {
-    kotlinOptions.jvmTarget = "1.8"
+    kotlinOptions.jvmTarget = "11"
 }
