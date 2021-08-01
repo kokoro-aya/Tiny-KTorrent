@@ -14,20 +14,42 @@ import java.net.InetSocketAddress
 const val CONNECT_TIMEOUT = 3_000
 const val READ_TIMEOUT = 3_000
 
-
+/**
+ * Creates a TCP connection with the given IP address and port number.
+ * @param ip IP address of the remote host
+ * @param port port number of the remote host
+ * @return a socket that holds the created connection
+ */
 suspend fun createConnection(ip: String, port: Int): Socket {
     return aSocket(ActorSelectorManager(Dispatchers.IO)).tcp().connect(InetSocketAddress(ip, port))
 }
 
+/**
+ * Open the input and output channels of the given socket
+ * @param socket the socket to be open
+ * @return a pair of output channel (ByteWriteChannel) and input channel (ByteReadChannel)
+ */
 fun openChannels(socket: Socket): Pair<ByteWriteChannel, ByteReadChannel> {
     return socket.openWriteChannel(autoFlush = true) to socket.openReadChannel()
 }
 
+/**
+ * Writes data to the given channel
+ * @param outputChannel the channel to be written into
+ * @param data data to be written into the channel, in string form
+ */
 suspend fun sendData(outputChannel: ByteWriteChannel, data: String) {
     val dt = data.map { it.code.toByte() }.toByteArray()
     outputChannel.writeAvailable(dt)
 }
 
+/**
+ * Receives data from the host. If the buffer size is 0 (default), the first 4 bytes of the received message
+ * will be read as int to get the total length of the message.
+ * @param inputChannel the channel to be read
+ * @param bufferSize size of the receiving buffer
+ * @return received data in the form of string
+ */
 suspend fun recvData(inputChannel: ByteReadChannel, bufferSize: Int): String {
     return if (bufferSize != 0) {
         val buffer = ByteArray(bufferSize)

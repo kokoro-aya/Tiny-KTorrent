@@ -15,4 +15,9 @@ multi-file or seeding.
 
 - Status display is not showing
 - While connecting to a certain types of peers, the handshake will fail (the socket tries to read 68 bytes but it received an EOF)
-- Not supporting compact format in tracker's response
+
+### Implemented
+
+- Bencode/Decode
+- Retrieve a list of peers from tracker periodically
+- Download single file with multi threads

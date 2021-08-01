@@ -13,9 +13,6 @@ sealed class Result<out A>: Serializable {
 
     abstract fun isEmpty(): Boolean
 
-    /**
-     *
-     */
     fun unsafeGet(): A = when (this) {
         is Success -> this.value
         is Failure -> throw IllegalStateException("Attempt to unwrap a Result<> but got an exception:", this.exception)
@@ -206,6 +203,11 @@ sealed class Result<out A>: Serializable {
             } catch (e: Exception) {
                 Result.failure(IllegalStateException("Exception while validating $value", e))
             }
+    }
+
+    fun isSuccess(): Boolean = when (this) {
+        is Success -> true
+        else -> false
     }
 }
 

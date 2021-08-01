@@ -5,6 +5,12 @@ import moe.irony.utils.fp.sequenceLeft
 
 data class PeerResponse(val interval: Int, val peers: List<Peer>)
 
+data class CompactPeerResponse(val interval: Int, val peerInfos: String)
+
+/**
+ * An representation of peers that is retrieved from the tracker.
+ * It contains a string denoting the IP and a port number.
+ */
 data class Peer(val ip: String, val peerId: String, val port: Int)
 
 fun Result<DictionaryLiteral>.getPeer(): Result<Peer> =
@@ -44,3 +50,23 @@ fun Result<Bencode>.convertToPeerResponse(): Result<PeerResponse> =
             else -> Result.failure("Wrong type, not a peers response format")
         }
     }.mapFailure("Encountered error while trying to decode peers response from server [0]")
+
+fun Result<DictionaryLiteral>.getCompactPeerResponse(): Result<CompactPeerResponse> =
+    this.flatMap { dict ->
+        dict.getIntAttr("interval").flatMap { interval ->
+            dict.getStringAttr("peers").flatMap { peers ->
+                Result(CompactPeerResponse(
+                    interval = interval.toInt(),
+                    peerInfos = peers
+                ))
+            }
+        }
+    }
+
+fun Result<Bencode>.convertToCompactResponse(): Result<CompactPeerResponse> =
+    this.flatMap {
+        when (it) {
+            is DictionaryLiteral -> Result(it).getCompactPeerResponse()
+            else -> Result.failure("Wrong type, not a compact peer response format")
+        }
+    }.mapFailure("Encountered error while trying to decode compact peers response from server")

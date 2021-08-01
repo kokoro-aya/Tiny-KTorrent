@@ -9,6 +9,9 @@ import java.security.MessageDigest
 //    return md.digest(bytes).toList()
 //}
 
+/**
+ * Given a string, calculates its sha1 hash and returns a hex-encoded string
+ */
 fun String.hash(): String {
     val bytes = this.map { it.code.toByte() }.toByteArray() // 不能用toByteArray(Charsets.ASCII)方法，会出问题
     val md = MessageDigest.getInstance("SHA-1")

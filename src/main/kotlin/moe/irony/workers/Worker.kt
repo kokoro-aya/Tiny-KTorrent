@@ -19,26 +19,62 @@ const val PEER_ID_STARTING_POS = 48
 const val HASH_LENGTH = 20
 const val DUMMY_PEER_IP = "0.0.0.0"
 
+/***
+ * Represents a concrect worker that works on a thread that is connected to a server and tries to download blocks as the
+ * download is not completed.
+ *
+ * It exposes two methods `start()` and `stop()`. The `start()` method should be wrapped into a coroutine launcher to make
+ * full use of coroutines.
+ *
+ * @param peers a channel of peers that this worker will listen to get the next available peer
+ * @param clientId the peer ID of this BitTorrent client. It's generated in the TorrentClient class
+ * @param infoHash the info hash of the torrent file
+ * @param pieceManager a PieceManager that manages the workers
+ */
 class Worker(
-    private val peers: Channel<Peer>,
+    private val peers: Channel<Peer>, // we use the channel instead of a queue
     private val clientId: String,
     private val infoHash: String,
     private val pieceManager: PieceManager,
 ) {
+
+    // Sockets and channels. Must be initialized before usage.
+
     private lateinit var socket: Socket
     private lateinit var outputChannel: ByteWriteChannel
     private lateinit var inputChannel: ByteReadChannel
+
+    // Internal flags
 
     private var choked: Boolean = true
     private var terminated = false
     private var requestPending = false
 
+    // The peer and its BitField that this worker holds. Must be initialized before usage.
+
     private lateinit var peer: Peer
     private lateinit var peerBitField: String
 
+    // The id of the peer that we are connecting to
     lateinit var peerId: String private set
 
-    fun createHandshakeMessage(): String {
+    /**
+     * Creates the initial handshake message to be sent to the peer.
+     * The handshake message has the following structure:
+     *
+     * <proto.length><proto><reserved><info_hash><peer_id>
+     *
+     * proto: string identifier of the protocol
+     * proto.length: the length of proto, in a single raw byte
+     * reserved: 8 reserved bytes
+     * info_hash: 20-byte sha1 hash of the torrent file
+     * peer_id: 20-byte string used as a unique ID for the client
+     *
+     * See https://blog.jse.li/posts/torrent/#complete-the-handshake for more descriptions.
+     *
+     * @return a string representation of the handshake message
+     */
+    private fun createHandshakeMessage(): String {
         val protoLen = (0x13).toChar()
         val protocol = "BitTorrent protocol"
         val zero = (0x0).toChar()
@@ -55,7 +91,14 @@ class Worker(
         return message
     }
 
-    suspend fun performHandshake() {
+    /**
+     * Establishes a TCP connection with the peer and send an initial BitTorrent handshake message.
+     * Then it waits for it to reply, compares its info hash to that of the torrent file.
+     * If the hashes do not match, the connection will be closed.
+     */
+    private suspend fun performHandshake() {
+
+        // Connects to the peer
         Log.info { "Connecting to peer [${peer.ip}]..." }
         try {
             socket = createConnection(peer.ip, peer.port)
@@ -68,11 +111,13 @@ class Worker(
         }
         Log.info { "Establish TCP connection with peer: SUCCESS" }
 
+        // Send the handshake message to the peer
         Log.info { "Sending handshake message to [${peer.ip}]..." }
         val handshakeMessage = createHandshakeMessage()
         sendData(outputChannel, handshakeMessage)
         Log.info { "Send handshake message: SUCCESS" }
 
+        // Waiting for response from the peer
         Log.info { "Receiving handshake reply from peer [${peer.ip}]" }
         val reply = recvData(inputChannel, handshakeMessage.length)
         if (reply.isEmpty()) {
@@ -80,6 +125,8 @@ class Worker(
             throw RuntimeException("Receive handshake from peer: FAILED [No response from peer]")
         }
 
+        // Compare the info hash from the peer's reply message with that we sent.
+        // If the two are mismatched, close the connection and raise an exception.
         peerId = reply.slice(PEER_ID_STARTING_POS until PEER_ID_STARTING_POS + HASH_LENGTH)
         Log.info { "Receive handshake reply from peer: SUCCESS" }
 
@@ -95,25 +142,38 @@ class Worker(
         Log.info { "Hash comparison: SUCCESS" }
     }
 
-    suspend fun receiveBitField() {
+    /**
+     * Receives and read the message that contains a BitField from the peer
+     */
+    private suspend fun receiveBitField() {
+
+        // Receive BitField from the peer
         Log.info { "Receiving BitField message from peer [${peer.ip}]..." }
         val message = receiveMessage()
         if (message.id != MessageId.BITFIELD)
             throw RuntimeException("Receive BitField from peer: FAILED [ wrong message ID: ${message.id} ]")
         peerBitField = message.payload
+
+        // Informs the PieceManager the received BitField
         pieceManager.addPeer(peerId, peerBitField)
 
         Log.info { "Receive BitField from peer: SUCCESS" }
     }
 
-    suspend fun sendInterested() {
+    /**
+     * Send an Interested message to the peer.
+     */
+    private suspend fun sendInterested() {
         Log.info { "Sending Interested message to peer [${peer.ip}]" }
         val interestedMessage = BitTorrentMessage(MessageId.INTERESTED, "").toString()
         sendData(outputChannel, interestedMessage)
         Log.info { "Send Interested message: SUCCESS" }
     }
 
-    suspend fun receiveUnchoke() {
+    /**
+     * Receives and read the Unchoke message from the peer. If the received message is not Unchoke, raise an error.
+     */
+    private suspend fun receiveUnchoke() {
         Log.info { "Receiving Unchoke message from peer [${peer.ip}]..." }
         val message = receiveMessage()
         if (message.id != MessageId.UNCHOKE)
@@ -122,7 +182,10 @@ class Worker(
         Log.info { "Received Unchoke message: SUCCESS" }
     }
 
-    suspend fun requestPiece() {
+    /**
+     * Sends a request message to the peer for the next block to be downloaded.
+     */
+    private suspend fun requestPiece() {
         val block = pieceManager.nextRequest(peerId)
         block ?.let {
             // Java内部使用网络序，不需要htonl转换
@@ -155,7 +218,10 @@ class Worker(
         }
     }
 
-    suspend fun closeSocket() {
+    /**
+     * Close the socket.
+     */
+    private suspend fun closeSocket() {
         if (!socket.isClosed) {
             Log.info { "Closing connection at socket ${socket.localAddress}" }
             socket.close()
@@ -167,7 +233,16 @@ class Worker(
         }
     }
 
-    suspend fun establishNewConnection(): Boolean {
+    /**
+     * Tries to establish a new TCP connection with the peer by performing the following actions:
+     *
+     * 1. Sends a BitTorrent handshake message. Waits for its reply and compares the info hashes.
+     * 2. Receives and stores the BitField from the peer.
+     * 3. Send an Interested message to the peer.
+     *
+     * Returns true if a stable connection is successfully established, otherwise false.
+     */
+    private suspend fun establishNewConnection(): Boolean {
         return try {
             performHandshake()
             receiveBitField()
@@ -180,7 +255,11 @@ class Worker(
         }
     }
 
-    suspend fun receiveMessage(bufferSize: Int = 0): BitTorrentMessage {
+    /**
+     * A wrapper function that calls the `recvData(channel:buffer:)` function. It converts the raw data into a BitTorrentMessage
+     * if the ID could be read. Otherwise an error will be raised.
+     */
+    private suspend fun receiveMessage(bufferSize: Int = 0): BitTorrentMessage {
         val reply = recvData(inputChannel, bufferSize)
         if (reply.isEmpty()) {
             Log.info { "Received message 'keep alive' from peer [${peer.ip}]" }
@@ -204,16 +283,22 @@ class Worker(
         return BitTorrentMessage(messageId, payload)
     }
 
+    /**
+     * The main entry to launch the current worker. Must be wrapped in a launch scope to make it run in another coroutine.
+     */
     suspend fun start() {
         Log.info { "Downloading thread started..." }
         while (!(terminated || pieceManager.isComplete())) {
 
             peer = peers.receive()
 
+            // If a dummy peer is received, the worker will finish its job.
+            // This is used to terminate all workers once the download is completed.
             if (peer.ip == DUMMY_PEER_IP)
                 return
 
             try {
+                // Establishes connection with the peer and lets it know that we are interested.
                 if (establishNewConnection()) {
                     while (!pieceManager.isComplete()) {
                         val message = receiveMessage()
@@ -262,6 +347,9 @@ class Worker(
         }
     }
 
+    /**
+     * Terminates the worker by triggering the flag to true
+     */
     fun stop() {
         terminated = true
     }

@@ -11,22 +11,31 @@ import kotlin.experimental.or
 import kotlin.reflect.KFunction
 import kotlin.reflect.jvm.javaMethod
 
+/**
+ * URL-encodes the given hex string (i.e. a series of numbers represented in string that are hex-encoded)
+ * e.g. `903caf678b2e`
+ * @return the encoded string
+ */
 fun String.hexToUrlEncode(): String {
     check (length % 2 == 0) { "Must have an even length" }
-    return this.chunked(2)
-        .joinToString("") { it.toInt(16).urlEncode() }
+    return this.chunked(2) // divided into chunks of uint8 (`0x00` to `0xff`)
+        .joinToString("") { it.toInt(16).urlEncode() } // encode each to the char and combine them
 }
 
 private fun Int.urlEncode(): String {
     return when {
-        this.toChar() in '0' .. '9'
+        this.toChar() in '0' .. '9' // keep alphanumeric and other accpeted characters intact
                 || this.toChar() in 'a' .. 'z'
                 || this.toChar() in 'A' .. 'Z'
                 || this.toChar() in ".-_~" -> "${this.toChar()}"
-        else -> "%${"%02X".format(this)}"
+        else -> "%${"%02X".format(this)}" // any other characters are percent-encoded
     }
 }
 
+/**
+ * Convert a string encoded in hexadecimal form to a string in plain char form
+ * @return the decoded string
+ */
 fun String.hexDecode(): String {
     check (length % 2 == 0) { "Must have an even length" }
     return this.chunked(2)
@@ -34,6 +43,10 @@ fun String.hexDecode(): String {
         .joinToString("")
 }
 
+/**
+ * Hex-encode the string.
+ * @return hex-encoded string.
+ */
 fun String.hexEncode(): String {
     val hexDigits = "0123456789ABCDEF"
 
@@ -47,18 +60,27 @@ fun String.hexEncode(): String {
     }
 }
 
+/**
+ * Checks if the bit at the given index of a BitField is set to 1
+ */
 fun ByteArray.hasPiece(index: Int): Boolean {
     val byteIndex = index / 8
     val offset = index % 8
     return this[byteIndex].toInt().shr(7 - offset).and(1) != 0
 }
 
+/**
+ * Sets the given index of the BitField to 1
+ */
 fun ByteArray.setPiece(index: Int) {
     val byteIndex = index / 8
     val offset = index % 8
     this[byteIndex] = this[byteIndex].or(1.shl(7 - offset).toByte())
 }
 
+/**
+ * Converts the time in seconds to the format HH:MM:ss
+ */
 fun Long.formatTime(): String {
     if (this < 0) return "inf"
     val hh = "%02d".format(this / 3600)
@@ -73,17 +95,34 @@ fun Long.formatTime(): String {
 }
 
 // 这里有个坑，必须用UByte
+/**
+ * Converts an array of bytes (UBytes) in a string format to an int
+ */
 fun List<UByte>.bytesToInt(): Int = this.map { it.toInt() }.fold(0) { left, right ->
     left * 256 + right
 }
 
-fun Int.intToBytes(): List<UByte> = unfold(this) {
-    if (it <= 1)
+//fun Int.intToBytes(): List<UByte> = unfold(this) {
+//    if (it <= 1)
+//        null
+//    else
+//        (it % 256).toUByte() to it / 256
+//}.reversed()
+
+/**
+ * The correct implementation of reverse of `List<UByte>.bytesToInt()` that will add leading 0 if the
+ * number is small.
+ */
+fun Int.expandToByteInts(): List<Int> = unfold(this to 4) {
+    if (it.second == 0)
         null
     else
-        (it % 256).toUByte() to it / 256
+        it.first % 256 to (it.first / 256 to it.second - 1)
 }.reversed()
 
+/**
+ * A parametrized singleton that holds the logger object. Provides APIs for logging usage.
+ */
 class Log { // https://stackoverflow.com/questions/40398072/singleton-with-parameter-in-kotlin#comment107750187_45943282
     companion object {
         @Volatile private var isLogEnabled: Boolean = false
@@ -122,13 +161,6 @@ class Log { // https://stackoverflow.com/questions/40398072/singleton-with-param
 
     }
 }
-
-fun Int.expandToByteInts(): List<Int> = unfold(this to 4) {
-    if (it.second == 0)
-        null
-    else
-        it.first % 256 to (it.first / 256 to it.second - 1)
-}.reversed()
 
 // Logger的事情又忙活了一天。。。找到合适的logger挺难的，然后还得自己包装个单例类（
 // 不确定要不要实现反射泛用方法，性能上可能会很差
