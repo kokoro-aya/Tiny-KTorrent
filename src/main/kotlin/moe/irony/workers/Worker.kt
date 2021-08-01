@@ -11,10 +11,7 @@ import kotlinx.coroutines.delay
 import moe.irony.bencode_decoder.Peer
 import moe.irony.connect.*
 import moe.irony.pieces.PieceManager
-import moe.irony.utils.Log
-import moe.irony.utils.bytesToInt
-import moe.irony.utils.hexDecode
-import moe.irony.utils.intToBytes
+import moe.irony.utils.*
 import java.util.concurrent.ConcurrentLinkedDeque
 
 const val INFO_HASH_STARTING_POS = 28
@@ -128,11 +125,21 @@ class Worker(
         val block = pieceManager.nextRequest(peerId)
         block ?.let {
             // Java内部使用网络序，不需要htonl转换
-            val index = block.piece.intToBytes().map { it.toByte() }
-            val offset = block.offset.intToBytes().map { it.toByte() }
-            val length = block.length.intToBytes().map { it.toByte() }
+//            val index = block.piece.intToBytes().map { it.toByte() }
+//            val offset = block.offset.intToBytes().map { it.toByte() }
+//            val length = block.length.intToBytes().map { it.toByte() }
+//
+//            val payload = (index + offset + length).joinToString("")
 
-            val payload = (index + offset + length).joinToString("")
+            // 这里有好几个坑
+            // - index，offset，length长度不一定为完整的int（4个字节），然后就会出现长度不一致
+            // - joinToString函数会把字面量直接变成字符串，比如说[64,0]会变成"640"
+
+            val index = block.piece.expandToByteInts().map { it.toChar() }.joinToString("")
+            val offset = block.offset.expandToByteInts().map { it.toChar() }.joinToString("")
+            val length = block.length.expandToByteInts().map { it.toChar() }.joinToString("")
+
+            val payload = index + offset + length
 
             buildString {
                 append("Sending Request message to peer ${peer.ip} ")
@@ -192,7 +199,7 @@ class Worker(
             else -> throw IllegalArgumentException("Invalid message id received")
         }
         val payload = reply.substring(1)
-        Log.info { "Received message with ID $messageId from peer [${peer.ip}]" }
+        Log.debug { "Received message with ID $messageId from peer [${peer.ip}]" }
         return BitTorrentMessage(messageId, payload)
     }
 
@@ -232,7 +239,7 @@ class Worker(
                             MessageId.KEEP_ALIVE -> {
                                 Log.info { "Received keep_alive, waiting for next request attempt" }
                                 for (i in 120 downTo 1) {
-                                    Log.debug { "waiting for two minutes, $i seconds remains" }
+//                                    Log.debug { "waiting for two minutes, $i seconds remains" }
                                     delay(1000L)
                                 }
                             }
@@ -249,7 +256,9 @@ class Worker(
             } catch (e: Exception) {
                 closeSocket()
                 Log.error { "An error occurred while downloading from peer $peerId [${peer.ip}]" }
-                Log.error { e.message ?: "" }
+                e.message ?.let {
+                    Log.error { it }
+                } ?: Log.error { e.cause.toString() }
             }
         }
     }

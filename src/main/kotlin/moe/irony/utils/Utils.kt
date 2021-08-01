@@ -123,11 +123,18 @@ class Log { // https://stackoverflow.com/questions/40398072/singleton-with-param
     }
 }
 
+fun Int.expandToByteInts(): List<Int> = unfold(this to 4) {
+    if (it.second == 0)
+        null
+    else
+        it.first % 256 to (it.first / 256 to it.second - 1)
+}.reversed()
+
 // Logger的事情又忙活了一天。。。找到合适的logger挺难的，然后还得自己包装个单例类（
 // 不确定要不要实现反射泛用方法，性能上可能会很差
 
-fun getLogger(): Logger = LoggerFactory.getLogger(Logger.ROOT_LOGGER_NAME)
-fun getLogger(name: String): Logger = LoggerFactory.getLogger(name)
+// fun getLogger(): Logger = LoggerFactory.getLogger(Logger.ROOT_LOGGER_NAME)
+// fun getLogger(name: String): Logger = LoggerFactory.getLogger(name)
 
 fun main() {
 //    val a = listOf<UByte>(0x1a.toUByte(), 0xe1.toUByte())
@@ -155,10 +162,16 @@ fun main() {
 //    Log.error("err") { "error!" }
 //    Log.warn("warning") { "warning!" }
 
-    val i = -4194304
+//    val i = -4194304
+//
+//    val j = ByteBuffer.allocate(4).putInt(i).array()
 
-    val j = ByteBuffer.allocate(4).putInt(i).array()
-
-
+//    val a = 0
+//    val b = 0
+//    val c = 16384
+//
+//    val zz = c.expandToByteInts().map { it.toChar() }.joinToString("")
+//
+//    println(zz)
 
 }

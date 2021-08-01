@@ -36,6 +36,7 @@ data class Piece(
             if (b.offset == offset) {
                 b.status = BlockStatus.RETRIEVED
                 b.data = data
+                return // 这里忘记加return了
             }
         }
         throw IllegalStateException(
@@ -46,5 +47,7 @@ data class Piece(
         get() = blocks.all { it.status == BlockStatus.RETRIEVED };
 
     val isHashMatching: Boolean
-        get() = getData().hash().hexDecode() == hashValue
+        get() = getData().hash().hexDecode().map { it.toByte() } == hashValue.map { it.toByte() }
+    // hashValue里面的长度变成了40（每个byte后面紧跟一个0），所以跟getData().hash().hexDecode()后的值就不匹配了，尽管按理来说它们实际上是同样的值
+    // map { it.toByte() } 可以消除掉这些0，不过会把字符串变成字符数组
 }

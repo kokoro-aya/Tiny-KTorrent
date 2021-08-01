@@ -2,6 +2,7 @@ package moe.irony.pieces
 
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withLock
 import moe.irony.bencode_decoder.TorrentFile
 import moe.irony.connect.Block
@@ -17,6 +18,7 @@ import java.io.RandomAccessFile
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.ConcurrentLinkedDeque
 import java.util.concurrent.ConcurrentMap
+import java.util.concurrent.locks.ReentrantLock
 import kotlin.math.ceil
 import kotlin.math.min
 import kotlin.math.pow
@@ -72,7 +74,7 @@ class PieceManager(
     }
 
     private fun Long.expandWithRem(divideBy: Long): List<Long> = unfold(this) {
-        if (it < 0)
+        if (it <= 0) // 这里必须小于等于零，不然会多一个零元素
             null
         else
             min(it, divideBy) to it - divideBy
@@ -149,7 +151,8 @@ class PieceManager(
         val pos = this.index * torrentFile.pieceLength
         val data = this.getData().map { it.code.toByte() }.toByteArray()
         val len = data.size
-        downloadedFile.write(data, pos.toInt(), len)
+        downloadedFile.seek(pos)
+        downloadedFile.write(data, 0, len) // 这里的offset是data的offset，不是file的offset
     }
 
     private suspend fun displayProgressBar() {
@@ -223,7 +226,7 @@ class PieceManager(
             bl.piece == pieceIndex && bl.offset == blockOffset
         }?.also {
             pendingRequests.remove(it)
-        } ?: throw IllegalStateException("Received a block that's not in pendingRequest")
+        } // 这里只是从pendingRequests里面清除掉如果存在一个对应的request，但是如果没有的话也不应该报错
         val targetPiece = onGoingPieces.firstOrNull { it.index == pieceIndex }
             ?: throw IllegalStateException("Received block does not belong to any ongoing piece")
         mutex.unlock()
