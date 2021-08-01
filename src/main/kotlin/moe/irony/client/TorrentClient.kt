@@ -30,7 +30,7 @@ class TorrentClient(
 
     init {
         peerId = "-UT2021-" +
-                iterate(0, { Random(it).nextInt(0, 9) }, 12).joinToString("")
+                iterate(Random.nextInt(), { Random.nextInt(0, 9) }, 12).joinToString("")
 
         peers = Channel(capacity = Channel.UNLIMITED)
 
@@ -64,19 +64,30 @@ class TorrentClient(
             install(HttpTimeout)
         }
 
+        var interval: Int = PEER_QUERY_INTERVAL
+
         PeerRetriever(peerId, announceUrl, infoHash, PORT, fileSize, client)
             .retrievePeers(pieceManager.bytesDownloaded())
-            .forEach { peers.send(it) }
+            .let {
+                it.first.forEach { peers.send(it) }
+                interval = it.second
+            }
 
         if (peers.isEmpty) {
             Log.error { "No peer is available for this seed, download aborted" }
             return
         }
 
+        CoroutineScope(Dispatchers.Default).launch {
+            pieceManager.trackProgress()
+        }
+
         workers.addAll((1 .. workersNum)
             .map { Worker(peers, peerId, infoHash, pieceManager) }
             .onEach {
-                it.start()
+                CoroutineScope(Dispatchers.IO).launch {
+                    it.start()
+                }
             })
             .also {
                 println("Download intialized...")
@@ -86,9 +97,9 @@ class TorrentClient(
 
         while (!pieceManager.isComplete()) {
             val diff = System.currentTimeMillis() - lastPeerQuery
-            if (diff >= PEER_QUERY_INTERVAL || peers.isEmpty) {
+            if (diff >= interval || peers.isEmpty) {
                 val peerRetriever = PeerRetriever(peerId, announceUrl, infoHash, PORT, fileSize, client)
-                val retrievedPeers = peerRetriever.retrievePeers(pieceManager.bytesDownloaded())
+                val (retrievedPeers, newInterval) = peerRetriever.retrievePeers(pieceManager.bytesDownloaded())
                 if (retrievedPeers.isNotEmpty()) {
                     val removal = CoroutineScope(Dispatchers.Default).launch {
                         while (!peers.isEmpty)
@@ -98,6 +109,7 @@ class TorrentClient(
                     retrievedPeers.forEach {
                         peers.send(it)
                     }
+                    interval = newInterval
                 }
                 lastPeerQuery = System.currentTimeMillis()
             }

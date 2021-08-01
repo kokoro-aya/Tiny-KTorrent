@@ -63,6 +63,7 @@ class Worker(
             inputChannel = socket.openReadChannel()
         } catch (e: Exception) {
             socket.close()
+            Log.error { e.message ?: "An error occurred while performing handshake with peer [${peer.ip}]" }
             throw RuntimeException("Cannot connect to peer [${peer.ip}]")
         }
         Log.info { "Establish TCP connection with peer: SUCCESS" }
@@ -174,7 +175,7 @@ class Worker(
             true
         } catch (e: Exception) {
             Log.error { "An error occurred while connecting with peer [${peer.ip}]" }
-            Log.error { e.message ?: "" }
+            Log.error { e.message ?: e.cause.toString() }
             false
         }
     }
@@ -256,9 +257,7 @@ class Worker(
             } catch (e: Exception) {
                 closeSocket()
                 Log.error { "An error occurred while downloading from peer $peerId [${peer.ip}]" }
-                e.message ?.let {
-                    Log.error { it }
-                } ?: Log.error { e.cause.toString() }
+                Log.error { e.message ?: e.cause.toString() }
             }
         }
     }

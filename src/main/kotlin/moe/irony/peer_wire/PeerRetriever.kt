@@ -33,13 +33,14 @@ class PeerRetriever(
     val client: HttpClient,
 ) {
 
-    private fun decodeResponse(resp: String): List<Peer> {
+    private fun decodeResponse(resp: String): Pair<List<Peer>, Int> {
         Log.info { "Decoding tracker response..." }
 
         val bencode = Decoder(resp).decode()
         val peerResp = bencode.convertToPeerResponse().unsafeGet()
 
         val peers = peerResp.peers
+        val interval = peerResp.interval
 
 //        if (true) {
 //            val peerInfoSize = 6
@@ -70,10 +71,10 @@ class PeerRetriever(
         Log.info { "Decode tracker response: SUCCESS" }
         Log.info { "Number of peers discovered: ${peers.size}" }
 
-        return peers
+        return peers to interval
     }
 
-    suspend fun retrievePeers(byteDownloaded: Long = 0L): List<Peer> {
+    suspend fun retrievePeers(byteDownloaded: Long = 0L): Pair<List<Peer>, Int> {
         check(byteDownloaded >= 0) { "Downloaded bytes must be positive" }
         buildString {
             appendLine("Retrieving peers from $announceUrl with the following parameters")
@@ -118,7 +119,7 @@ class PeerRetriever(
 //                println("Status > ${rsp.status}")
 //                println("Message > $recv")
                 Log.info { "Retrieving response from tracker: FAILED [ ${rsp.status}: $recv ]" }
-                listOf()
+                listOf<Peer>() to Int.MAX_VALUE
             }
         }
     }
@@ -153,7 +154,7 @@ fun main() {
 
     runBlocking {
         val li = peersRetriver.retrievePeers(0)
-        li.forEach {
+        li.first.forEach {
             println(it)
         }
     }

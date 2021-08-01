@@ -70,7 +70,6 @@ class PieceManager(
 
         startingTime = System.currentTimeMillis()
 
-
     }
 
     private fun Long.expandWithRem(divideBy: Long): List<Long> = unfold(this) {
@@ -203,7 +202,7 @@ class PieceManager(
         }
     }
 
-    private suspend fun trackProgress() {
+    suspend fun trackProgress() {
         delay(1000L)
         while (!isComplete()) {
             displayProgressBar()
