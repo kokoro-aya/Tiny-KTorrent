@@ -22,7 +22,7 @@ import kotlin.math.min
 import kotlin.math.pow
 
 const val BLOCK_SIZE = 16384L
-const val MAX_PENDING_TIME = 60_000
+const val MAX_PENDING_TIME = 1_000
 const val PROGRESS_BAR_WIDTH = 80
 const val PROGRESS_DISPLAY_INTERVAL = 1500
 
@@ -221,10 +221,10 @@ class PieceManager(
         val timeSinceStart = currentTime - startingTime
 
         val output = buildString {
-            append("[Peers: ${peers.size} / $maximumConnections, ")
+            append("[Peers: ${peers.size} / $maximumConnections ")
             append("%.2f".format(avgDownloadSpeedInMBS))
             append(" MiB/s, ")
-            append("ETA: ${remainingTime.formatTime()}]")
+//            append("ETA: ${remainingTime.formatTime()}]")
 //            appendLine()
 
             append("[")

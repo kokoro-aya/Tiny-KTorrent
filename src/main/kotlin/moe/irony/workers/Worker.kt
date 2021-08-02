@@ -6,6 +6,7 @@ import io.ktor.network.sockets.openReadChannel
 import io.ktor.network.sockets.openWriteChannel
 import io.ktor.utils.io.ByteReadChannel
 import io.ktor.utils.io.ByteWriteChannel
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
 import moe.irony.bencode_decoder.Peer
@@ -289,6 +290,7 @@ class Worker(
     /**
      * The main entry to launch the current worker. Must be wrapped in a launch scope to make it run in another coroutine.
      */
+    @OptIn(ExperimentalCoroutinesApi::class)
     suspend fun start() {
         Log.info { "Downloading thread started..." }
         while (!(terminated || pieceManager.isComplete())) {
@@ -326,11 +328,8 @@ class Worker(
                                 pieceManager.blockReceived(peerId, index, begin, blockData)
                             }
                             MessageId.KEEP_ALIVE -> {
-                                Log.info { "Received keep_alive, waiting for next request attempt" }
-                                for (i in 120 downTo 1) {
-//                                    Log.debug { "waiting for two minutes, $i seconds remains" }
-                                    delay(1000L)
-                                }
+                                Log.info { "Received keep_alive, let's break" }
+                                break
                             }
                             else -> {
                                 Log.error { "Unsupported BitMessageId: ${message.id}, aborted" }
