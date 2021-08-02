@@ -125,11 +125,11 @@ class TorrentClient(
                 val peerRetriever = PeerRetriever(peerId, announceUrl, infoHash, PORT, fileSize, client)
                 val (retrievedPeers, newInterval) = peerRetriever.retrievePeers(pieceManager.bytesDownloaded())
                 if (retrievedPeers.isNotEmpty()) {
-                    val removal = CoroutineScope(Dispatchers.Default).launch {
-                        while (!peers.isEmpty)
-                            peers.receive()
-                    }
-                    removal.join()
+//                    val removal = CoroutineScope(Dispatchers.Default).launch {
+//                        while (!peers.isEmpty)
+//                            peers.receive()
+//                    }
+//                    removal.join()
                     retrievedPeers.forEach {
                         peers.send(it)
                     }

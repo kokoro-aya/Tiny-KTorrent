@@ -12,6 +12,7 @@ import moe.irony.bencode_decoder.Peer
 import moe.irony.connect.*
 import moe.irony.pieces.PieceManager
 import moe.irony.utils.*
+import java.net.SocketTimeoutException
 import java.util.concurrent.ConcurrentLinkedDeque
 
 const val INFO_HASH_STARTING_POS = 28
@@ -123,7 +124,7 @@ class Worker(
         Log.info { "Receiving handshake reply from peer [${peer.ip}]" }
         val reply = recvData(inputChannel!!, handshakeMessage.length)
         if (reply.isEmpty()) {
-            socket!!.close()
+            socket?.close()
             throw RuntimeException("Receive handshake from peer: FAILED [No response from peer]")
         }
 
@@ -135,7 +136,7 @@ class Worker(
         val receivedInfoHash = reply.slice(INFO_HASH_STARTING_POS until INFO_HASH_STARTING_POS + HASH_LENGTH)
         if (receivedInfoHash.map { it.code.toByte() }
             != infoHash.hexDecode().map { it.code.toByte() }) { // 很麻烦。。。但是不这样就没法匹配了（
-            socket!!.close()
+            socket?.close()
             throw RuntimeException("Perform handshake with peer ${peer.ip}:" +
                     " FAILED [Received mismatching info hash]" +
                     "this: $infoHash, remote: $receivedInfoHash")
@@ -224,9 +225,9 @@ class Worker(
      * Close the socket.
      */
     private suspend fun closeSocket() {
-        if (!socket!!.isClosed) {
+        socket ?.let {
             Log.info { "Closing connection at socket ${socket!!.localAddress}" }
-            socket!!.close()
+            it.close()
             requestPending = false
             if (peerBitField.isNotEmpty()) {
                 peerBitField = ""
@@ -344,7 +345,7 @@ class Worker(
             } catch (e: Exception) {
                 closeSocket()
                 Log.error { "An error occurred while downloading from peer $peerId [${peer.ip}]" }
-                Log.error { e.message ?: e.cause.toString() }
+                Log.error { if (e is SocketTimeoutException) "socket timeout" else (e.message ?: e.cause.toString()) }
             }
         }
     }

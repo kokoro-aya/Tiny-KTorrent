@@ -22,7 +22,7 @@ import kotlin.math.min
 import kotlin.math.pow
 
 const val BLOCK_SIZE = 16384L
-const val MAX_PENDING_TIME = 10_000
+const val MAX_PENDING_TIME = 60_000
 const val PROGRESS_BAR_WIDTH = 80
 const val PROGRESS_DISPLAY_INTERVAL = 1500
 
@@ -147,16 +147,28 @@ class PieceManager(
      * requested or null if no such block is left from the list of Pieces
      */
     private fun nextOngoing(peerId: String): Block? {
-        return peers[peerId] ?.let { ba ->
+        val next =  peers[peerId] ?.let { ba ->
             onGoingPieces
-                .firstOrNull { ba.hasPiece(it.index) }
+                .firstOrNull { ba.hasPiece(it.index) } // 这里的条件不正确，取到的第一个可能在pending队列里
+                // 不一定？如果所有的pending都被pendingRequest resolve的话，那么确实不需要filter if any is MISSING
+                // 换句话说filter any is MISSING也解决不了块为PENDING却无法被下载的情况
                 ?.nextRequest()
                 ?.also {
-                    val currentTime = System.currentTimeMillis()
-                    val newPendingRequest = PendingRequest(block = it, timestamp = currentTime)
-                    pendingRequests.add(newPendingRequest)
+                    it.appendToPendingRequests()
                 }
         }
+        if (next == null) {
+            Log.debug { "No next ongoing block found!" }
+        } else {
+            Log.debug { "Next ongoing block: ${next.piece}->${next.offset}" }
+        }
+        return next
+    }
+
+    private fun Block.appendToPendingRequests() {
+        val currentTime = System.currentTimeMillis()
+        val newPendingRequest = PendingRequest(block = this, timestamp = currentTime)
+        pendingRequests.add(newPendingRequest)
     }
 
     /**
@@ -228,7 +240,7 @@ class PieceManager(
             append("]")
 
             append("$downloadedPieces / $totalPieces")
-            append("[${"%.2f".format(progress * 100)}]")
+            append("[${"%.2f".format(progress * 100)}%]")
 
             append("in ${timeSinceStart.formatTime()}")
             appendLine()
@@ -395,14 +407,22 @@ class PieceManager(
         }
         fun getRarestPieceOpt(missingPieces: Option<ConcurrentLinkedDeque<Piece>>): Option<Block> =
             missingPieces
-                .flatMap { Option.toOption(it.getRarestPiece()?.nextRequest()) }
+                .flatMap {
+                    Option.toOption(
+                        it.getRarestPiece()?.nextRequest()?.also { block ->
+                            block.appendToPendingRequests() // 确保把第一项也append进pendingList里
+                        }
+                    )
+                }
 
         mutex.withLock {
-            return missingPiecesEmpty().flatMap { cld ->
+            val next = missingPiecesEmpty().flatMap { cld ->
                 peersContainsIdEmpty().flatMap {
                     expiredRequestOpt().mapNone(::nextOngoingOpt).mapNone { getRarestPieceOpt(Option.Some(cld)) }
                 }
             }.toNullable()
+            return next
         }
+
     }
 }

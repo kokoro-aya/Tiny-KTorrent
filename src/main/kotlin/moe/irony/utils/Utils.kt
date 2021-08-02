@@ -1,16 +1,9 @@
 package moe.irony.utils
 
-import ch.qos.logback.classic.LoggerContext
-import ch.qos.logback.core.FileAppender
-import kotlinx.coroutines.*
 import moe.irony.utils.fp.unfold
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
-import java.nio.ByteBuffer
-import java.security.AccessController.getContext
 import kotlin.experimental.or
-import kotlin.reflect.KFunction
-import kotlin.reflect.jvm.javaMethod
 
 /**
  * URL-encodes the given hex string (i.e. a series of numbers represented in string that are hex-encoded)
@@ -84,9 +77,10 @@ fun ByteArray.setPiece(index: Int) {
  */
 fun Long.formatTime(): String {
     if (this < 0) return "inf"
-    val hh = "%02d".format(this / 3600)
-    val mm = "%02d".format((this % 3600) / 60)
-    val ss = "%02d".format(this % 60)
+    val seconds = this / 1000
+    val hh = "%02d".format(seconds / 3600)
+    val mm = "%02d".format((seconds % 3600) / 60)
+    val ss = "%02d".format(seconds % 60)
 
     return if (hh != "00") {
         "$hh:$mm:$ss"
@@ -207,12 +201,18 @@ fun main() {
 //
 //    println(zz)
 
-     runBlocking {
-        launch {
-            delay(500L)
-            System.out.flush()
-            println("Bar")
-        }
-        println("Foo")
+//     runBlocking {
+//        launch {
+//            delay(500L)
+//            System.out.flush()
+//            println("Bar")
+//        }
+//        println("Foo")
+//    }
+
+    val ba = arrayOf(0xff, 0xff, 0xff, 0xff).map { it.toByte() }.toByteArray()
+
+    for (i in 0 until 64) {
+        println(ba.hasPiece(i))
     }
 }
