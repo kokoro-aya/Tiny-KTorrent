@@ -119,6 +119,7 @@ class TorrentClient(
         var lastPeerQuery = System.currentTimeMillis()
 
         while (!pieceManager.isComplete()) {
+
             val diff = System.currentTimeMillis() - lastPeerQuery
             if (diff >= interval || peers.isEmpty) {
                 val peerRetriever = PeerRetriever(peerId, announceUrl, infoHash, PORT, fileSize, client)

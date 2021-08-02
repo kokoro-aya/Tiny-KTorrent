@@ -70,7 +70,7 @@ class PeerRetriever(
             val peerResp = compact.unsafeGet()
 
             val peers = mutableListOf<Peer>()
-            val interval = peerResp.interval
+            val interval = peerResp.interval * 1_000
             // Deserializing the peer information:
             // Detailed explanation can be found here:
             // https://blog.jse.li/posts/torrent/

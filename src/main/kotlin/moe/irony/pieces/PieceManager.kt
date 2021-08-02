@@ -2,7 +2,6 @@ package moe.irony.pieces
 
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withLock
 import moe.irony.bencode_decoder.TorrentFile
 import moe.irony.connect.Block
@@ -18,7 +17,6 @@ import java.io.RandomAccessFile
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.ConcurrentLinkedDeque
 import java.util.concurrent.ConcurrentMap
-import java.util.concurrent.locks.ReentrantLock
 import kotlin.math.ceil
 import kotlin.math.min
 import kotlin.math.pow
@@ -26,7 +24,7 @@ import kotlin.math.pow
 const val BLOCK_SIZE = 16384L
 const val MAX_PENDING_TIME = 10_000
 const val PROGRESS_BAR_WIDTH = 80
-const val PROGRESS_DISPLAY_INTERVAL = 500
+const val PROGRESS_DISPLAY_INTERVAL = 1500
 
 /**
  * Represents a request that's pending in the queue
@@ -194,53 +192,53 @@ class PieceManager(
      * Creates and outputs a progress bar in console.
      */
     private suspend fun displayProgressBar() {
-        mutex.withLock {
-            val downloadedPieces = finishedPieces.size
-            val downloadedLength = pieceLength * piecesDownloadedInInterval
+        mutex.lock()
+        val downloadedPieces = finishedPieces.size
+        val downloadedLength = pieceLength * piecesDownloadedInInterval
 
-            val avgDownloadSpeed = downloadedLength.toDouble() / PROGRESS_DISPLAY_INTERVAL.toDouble()
-            val avgDownloadSpeedInMBS = avgDownloadSpeed / (2.0).pow(20)
+        val avgDownloadSpeed = downloadedLength.toDouble() / (PROGRESS_DISPLAY_INTERVAL.toDouble() / 1000.0)
+        val avgDownloadSpeedInMBS = avgDownloadSpeed / (2.0).pow(20)
 
-            val timePerPiece = PROGRESS_DISPLAY_INTERVAL.toDouble() / piecesDownloadedInInterval.toDouble()
-            val remainingTime = ceil(timePerPiece * (totalPieces - downloadedPieces)).toLong()
+        val timePerPiece = (PROGRESS_DISPLAY_INTERVAL.toDouble() / 1000.0) / piecesDownloadedInInterval.toDouble()
+        val remainingTime = ceil(timePerPiece * (totalPieces - downloadedPieces)).toLong()
 
-            val progress = downloadedPieces.toDouble() / totalPieces.toDouble()
-            val pos = (PROGRESS_BAR_WIDTH * progress).toInt()
+        val progress = downloadedPieces.toDouble() / totalPieces.toDouble()
+        val pos = (PROGRESS_BAR_WIDTH * progress).toInt()
 
-            val currentTime = System.currentTimeMillis()
-            val timeSinceStart = currentTime - startingTime
+        val currentTime = System.currentTimeMillis()
+        val timeSinceStart = currentTime - startingTime
 
-            val output = buildString {
-                append("[Peers: ${peers.size} / $maximumConnections, ")
-                append("%.2f".format(avgDownloadSpeedInMBS))
-                append(" MiB/s, ")
-                append("ETA: ${remainingTime.formatTime()}]")
-                appendLine()
+        val output = buildString {
+            append("[Peers: ${peers.size} / $maximumConnections, ")
+            append("%.2f".format(avgDownloadSpeedInMBS))
+            append(" MiB/s, ")
+            append("ETA: ${remainingTime.formatTime()}]")
+//            appendLine()
 
-                append("[")
-                for (i in 0 until PROGRESS_BAR_WIDTH) {
-                    append(
-                        when {
-                            i < pos -> "="
-                            i == pos -> ">"
-                            else -> " "
-                        }
-                    )
-                }
-                append("]")
-
-                append("$downloadedPieces / $totalPieces")
-                append("[${"%.2f".format(progress * 100)}]")
-
-                append("in ${timeSinceStart.formatTime()}")
-                appendLine()
-
-                if (isComplete())
-                    appendLine()
+            append("[")
+            for (i in 0 until PROGRESS_BAR_WIDTH) {
+                append(
+                    when {
+                        i < pos -> "="
+                        i == pos -> ">"
+                        else -> " "
+                    }
+                )
             }
+            append("]")
 
-            println(output)
+            append("$downloadedPieces / $totalPieces")
+            append("[${"%.2f".format(progress * 100)}]")
+
+            append("in ${timeSinceStart.formatTime()}")
+            appendLine()
+
+            mutex.unlock()
+            if (isComplete()) // 在WithLock里面再调用isComplete()，会导致函数彻底死锁
+                appendLine()
         }
+
+        print(output)
     }
 
     /**
@@ -252,7 +250,7 @@ class PieceManager(
         while (!isComplete()) {
             displayProgressBar()
             piecesDownloadedInInterval = 0
-            delay(1000L)
+            delay(PROGRESS_DISPLAY_INTERVAL.toLong())
         }
     }
 

@@ -2,6 +2,7 @@ package moe.irony.utils
 
 import ch.qos.logback.classic.LoggerContext
 import ch.qos.logback.core.FileAppender
+import kotlinx.coroutines.*
 import moe.irony.utils.fp.unfold
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
@@ -165,8 +166,8 @@ class Log { // https://stackoverflow.com/questions/40398072/singleton-with-param
 // Logger的事情又忙活了一天。。。找到合适的logger挺难的，然后还得自己包装个单例类（
 // 不确定要不要实现反射泛用方法，性能上可能会很差
 
-// fun getLogger(): Logger = LoggerFactory.getLogger(Logger.ROOT_LOGGER_NAME)
-// fun getLogger(name: String): Logger = LoggerFactory.getLogger(name)
+ fun getLogger(): Logger = LoggerFactory.getLogger(Logger.ROOT_LOGGER_NAME)
+ fun getLogger(name: String): Logger = LoggerFactory.getLogger(name)
 
 fun main() {
 //    val a = listOf<UByte>(0x1a.toUByte(), 0xe1.toUByte())
@@ -206,4 +207,12 @@ fun main() {
 //
 //    println(zz)
 
+     runBlocking {
+        launch {
+            delay(500L)
+            System.out.flush()
+            println("Bar")
+        }
+        println("Foo")
+    }
 }

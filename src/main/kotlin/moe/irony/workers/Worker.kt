@@ -40,9 +40,9 @@ class Worker(
 
     // Sockets and channels. Must be initialized before usage.
 
-    private lateinit var socket: Socket
-    private lateinit var outputChannel: ByteWriteChannel
-    private lateinit var inputChannel: ByteReadChannel
+    private var socket: Socket? = null // Bad flavor, but the socket must be something otherwise will not close
+    private var outputChannel: ByteWriteChannel? = null
+    private var inputChannel: ByteReadChannel? = null
 
     // Internal flags
 
@@ -102,10 +102,12 @@ class Worker(
         Log.info { "Connecting to peer [${peer.ip}]..." }
         try {
             socket = createConnection(peer.ip, peer.port)
-            outputChannel = socket.openWriteChannel(autoFlush = true)
-            inputChannel = socket.openReadChannel()
+            outputChannel = socket?.openWriteChannel(autoFlush = true)
+            inputChannel = socket?.openReadChannel()
         } catch (e: Exception) {
-            socket.close()
+            if (socket != null) { // Socket may be not initialized
+                socket!!.close()
+            }
             Log.error { e.message ?: "An error occurred while performing handshake with peer [${peer.ip}]" }
             throw RuntimeException("Cannot connect to peer [${peer.ip}]")
         }
@@ -114,14 +116,14 @@ class Worker(
         // Send the handshake message to the peer
         Log.info { "Sending handshake message to [${peer.ip}]..." }
         val handshakeMessage = createHandshakeMessage()
-        sendData(outputChannel, handshakeMessage)
+        sendData(outputChannel!!, handshakeMessage)
         Log.info { "Send handshake message: SUCCESS" }
 
         // Waiting for response from the peer
         Log.info { "Receiving handshake reply from peer [${peer.ip}]" }
-        val reply = recvData(inputChannel, handshakeMessage.length)
+        val reply = recvData(inputChannel!!, handshakeMessage.length)
         if (reply.isEmpty()) {
-            socket.close()
+            socket!!.close()
             throw RuntimeException("Receive handshake from peer: FAILED [No response from peer]")
         }
 
@@ -133,7 +135,7 @@ class Worker(
         val receivedInfoHash = reply.slice(INFO_HASH_STARTING_POS until INFO_HASH_STARTING_POS + HASH_LENGTH)
         if (receivedInfoHash.map { it.code.toByte() }
             != infoHash.hexDecode().map { it.code.toByte() }) { // 很麻烦。。。但是不这样就没法匹配了（
-            socket.close()
+            socket!!.close()
             throw RuntimeException("Perform handshake with peer ${peer.ip}:" +
                     " FAILED [Received mismatching info hash]" +
                     "this: $infoHash, remote: $receivedInfoHash")
@@ -166,7 +168,7 @@ class Worker(
     private suspend fun sendInterested() {
         Log.info { "Sending Interested message to peer [${peer.ip}]" }
         val interestedMessage = BitTorrentMessage(MessageId.INTERESTED, "").toString()
-        sendData(outputChannel, interestedMessage)
+        sendData(outputChannel!!, interestedMessage)
         Log.info { "Send Interested message: SUCCESS" }
     }
 
@@ -212,7 +214,7 @@ class Worker(
             }.let { Log.info { it } }
 
             val requestMessage = BitTorrentMessage(MessageId.REQUEST, payload).toString()
-            sendData(outputChannel, requestMessage)
+            sendData(outputChannel!!, requestMessage)
             requestPending = true
             Log.info { "Send Request message: SUCCESS" }
         }
@@ -222,9 +224,9 @@ class Worker(
      * Close the socket.
      */
     private suspend fun closeSocket() {
-        if (!socket.isClosed) {
-            Log.info { "Closing connection at socket ${socket.localAddress}" }
-            socket.close()
+        if (!socket!!.isClosed) {
+            Log.info { "Closing connection at socket ${socket!!.localAddress}" }
+            socket!!.close()
             requestPending = false
             if (peerBitField.isNotEmpty()) {
                 peerBitField = ""
@@ -260,7 +262,7 @@ class Worker(
      * if the ID could be read. Otherwise an error will be raised.
      */
     private suspend fun receiveMessage(bufferSize: Int = 0): BitTorrentMessage {
-        val reply = recvData(inputChannel, bufferSize)
+        val reply = recvData(inputChannel!!, bufferSize)
         if (reply.isEmpty()) {
             Log.info { "Received message 'keep alive' from peer [${peer.ip}]" }
             return BitTorrentMessage(MessageId.KEEP_ALIVE, reply)

@@ -1,18 +1,14 @@
 package moe.irony.connect
 
 import io.ktor.network.selector.ActorSelectorManager
-import io.ktor.network.sockets.Socket
-import io.ktor.network.sockets.aSocket
-import io.ktor.network.sockets.openReadChannel
-import io.ktor.network.sockets.openWriteChannel
+import io.ktor.network.sockets.*
 import io.ktor.utils.io.*
 import io.ktor.utils.io.core.ByteOrder
 import kotlinx.coroutines.Dispatchers
 import moe.irony.utils.Log
 import java.net.InetSocketAddress
 
-const val CONNECT_TIMEOUT = 3_000
-const val READ_TIMEOUT = 3_000
+const val READ_WRITE_TIMEOUT = 3_000L
 
 /**
  * Creates a TCP connection with the given IP address and port number.
@@ -21,7 +17,9 @@ const val READ_TIMEOUT = 3_000
  * @return a socket that holds the created connection
  */
 suspend fun createConnection(ip: String, port: Int): Socket {
-    return aSocket(ActorSelectorManager(Dispatchers.IO)).tcp().connect(InetSocketAddress(ip, port))
+    return aSocket(ActorSelectorManager(Dispatchers.IO)).tcp().connect(InetSocketAddress(ip, port)) {
+        socketTimeout = READ_WRITE_TIMEOUT
+    }
 }
 
 /**
