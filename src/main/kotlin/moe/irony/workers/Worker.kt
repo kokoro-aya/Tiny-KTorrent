@@ -98,80 +98,94 @@ class Worker(
      * Then it waits for it to reply, compares its info hash to that of the torrent file.
      * If the hashes do not match, the connection will be closed.
      */
-    private suspend fun performHandshake() {
+    private suspend fun performHandshake(): Boolean {
 
         // Connects to the peer
-        Log.info { "Connecting to peer [${peer.ip}]..." }
+        println("Connecting to peer [${peer.ip}]...")
         try {
             socket = createConnection(peer.ip, peer.port)
             outputChannel = socket?.openWriteChannel(autoFlush = true)
             inputChannel = socket?.openReadChannel()
+
+            Log.info { "Establish TCP connection with peer: SUCCESS" }
+
+            // Send the handshake message to the peer
+            Log.info { "Sending handshake message to [${peer.ip}]..." }
+            val handshakeMessage = createHandshakeMessage()
+            sendData(outputChannel!!, handshakeMessage)
+            Log.info { "Send handshake message: SUCCESS" }
+
+            // Waiting for response from the peer
+            Log.info { "Receiving handshake reply from peer [${peer.ip}]" }
+            val reply = recvData(inputChannel!!, handshakeMessage.length)
+            if (reply.isEmpty()) {
+                socket?.close()
+                throw RuntimeException("Receive handshake from peer: FAILED [No response from peer]")
+            }
+
+            // Compare the info hash from the peer's reply message with that we sent.
+            // If the two are mismatched, close the connection and raise an exception.
+            peerId = reply.slice(PEER_ID_STARTING_POS until PEER_ID_STARTING_POS + HASH_LENGTH)
+            Log.info { "Receive handshake reply from peer: SUCCESS" }
+
+            val receivedInfoHash = reply.slice(INFO_HASH_STARTING_POS until INFO_HASH_STARTING_POS + HASH_LENGTH)
+            if (receivedInfoHash.map { it.code.toByte() }
+                != infoHash.hexDecode().map { it.code.toByte() }) { // 很麻烦。。。但是不这样就没法匹配了（
+                socket?.close()
+                throw RuntimeException("Perform handshake with peer ${peer.ip}:" +
+                        " FAILED [Received mismatching info hash]" +
+                        "this: $infoHash, remote: $receivedInfoHash")
+            }
+
+            Log.info { "Hash comparison: SUCCESS" }
+
+            return true
+
         } catch (e: Exception) {
             if (socket != null) { // Socket may be not initialized
                 socket!!.close()
             }
             Log.error { e.message ?: "An error occurred while performing handshake with peer [${peer.ip}]" }
-            throw RuntimeException("Cannot connect to peer [${peer.ip}]")
+            Log.error { "Reason: " + (e.message ?: e.cause.toString()) }
+            Log.error { "Cannot connect to peer [${peer.ip}]" }
+
+            return false
         }
-        Log.info { "Establish TCP connection with peer: SUCCESS" }
-
-        // Send the handshake message to the peer
-        Log.info { "Sending handshake message to [${peer.ip}]..." }
-        val handshakeMessage = createHandshakeMessage()
-        sendData(outputChannel!!, handshakeMessage)
-        Log.info { "Send handshake message: SUCCESS" }
-
-        // Waiting for response from the peer
-        Log.info { "Receiving handshake reply from peer [${peer.ip}]" }
-        val reply = recvData(inputChannel!!, handshakeMessage.length)
-        if (reply.isEmpty()) {
-            socket?.close()
-            throw RuntimeException("Receive handshake from peer: FAILED [No response from peer]")
-        }
-
-        // Compare the info hash from the peer's reply message with that we sent.
-        // If the two are mismatched, close the connection and raise an exception.
-        peerId = reply.slice(PEER_ID_STARTING_POS until PEER_ID_STARTING_POS + HASH_LENGTH)
-        Log.info { "Receive handshake reply from peer: SUCCESS" }
-
-        val receivedInfoHash = reply.slice(INFO_HASH_STARTING_POS until INFO_HASH_STARTING_POS + HASH_LENGTH)
-        if (receivedInfoHash.map { it.code.toByte() }
-            != infoHash.hexDecode().map { it.code.toByte() }) { // 很麻烦。。。但是不这样就没法匹配了（
-            socket?.close()
-            throw RuntimeException("Perform handshake with peer ${peer.ip}:" +
-                    " FAILED [Received mismatching info hash]" +
-                    "this: $infoHash, remote: $receivedInfoHash")
-        }
-
-        Log.info { "Hash comparison: SUCCESS" }
     }
 
     /**
      * Receives and read the message that contains a BitField from the peer
      */
-    private suspend fun receiveBitField() {
+    private suspend fun receiveBitField(): Boolean {
 
-        // Receive BitField from the peer
-        Log.info { "Receiving BitField message from peer [${peer.ip}]..." }
-        val message = receiveMessage()
-        if (message.id != MessageId.BITFIELD)
-            throw RuntimeException("Receive BitField from peer: FAILED [ wrong message ID: ${message.id} ]")
-        peerBitField = message.payload
+        try {
+            // Receive BitField from the peer
+            Log.info { "Receiving BitField message from peer [${peer.ip}]..." }
+            val message = receiveMessage()
+            if (message.id != MessageId.BITFIELD)
+                throw RuntimeException("Receive BitField from peer: FAILED [ wrong message ID: ${message.id} ]")
+            peerBitField = message.payload
 
-        // Informs the PieceManager the received BitField
-        pieceManager.addPeer(peerId, peerBitField)
+            // Informs the PieceManager the received BitField
+            pieceManager.addPeer(peerId, peerBitField)
 
-        Log.info { "Receive BitField from peer: SUCCESS" }
+            Log.info { "Receive BitField from peer: SUCCESS" }
+
+            return true
+        } catch (e: Exception) {
+            return false
+        }
     }
 
     /**
      * Send an Interested message to the peer.
      */
-    private suspend fun sendInterested() {
+    private suspend fun sendInterested(): Boolean {
         Log.info { "Sending Interested message to peer [${peer.ip}]" }
         val interestedMessage = BitTorrentMessage(MessageId.INTERESTED, "").toString()
         sendData(outputChannel!!, interestedMessage)
         Log.info { "Send Interested message: SUCCESS" }
+        return true
     }
 
     /**
@@ -247,16 +261,12 @@ class Worker(
      * Returns true if a stable connection is successfully established, otherwise false.
      */
     private suspend fun establishNewConnection(): Boolean {
-        return try {
-            performHandshake()
-            receiveBitField()
-            sendInterested()
-            true
-        } catch (e: Exception) {
-            Log.error { "An error occurred while connecting with peer [${peer.ip}]" }
-            Log.error { e.message ?: e.cause.toString() }
-            false
-        }
+            if (performHandshake())
+                if (receiveBitField())
+                    if (sendInterested())
+                        return true
+        Log.error { "An error occurred while connecting with peer [${peer.ip}]" }
+        return false
     }
 
     /**

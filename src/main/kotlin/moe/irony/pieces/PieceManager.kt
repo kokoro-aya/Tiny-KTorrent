@@ -147,7 +147,12 @@ class PieceManager(
      * requested or null if no such block is left from the list of Pieces
      */
     private fun nextOngoing(peerId: String): Block? {
-        val next =  peers[peerId] ?.let { ba ->
+        //        if (next == null) {
+//            Log.debug { "No next ongoing block found!" }
+//        } else {
+//            Log.debug { "Next ongoing block: ${next.piece}->${next.offset}" }
+//        }
+        return peers[peerId]?.let { ba ->
             onGoingPieces
                 .firstOrNull { ba.hasPiece(it.index) } // 这里的条件不正确，取到的第一个可能在pending队列里
                 // 不一定？如果所有的pending都被pendingRequest resolve的话，那么确实不需要filter if any is MISSING
@@ -157,12 +162,6 @@ class PieceManager(
                     it.appendToPendingRequests()
                 }
         }
-        if (next == null) {
-            Log.debug { "No next ongoing block found!" }
-        } else {
-            Log.debug { "Next ongoing block: ${next.piece}->${next.offset}" }
-        }
-        return next
     }
 
     private fun Block.appendToPendingRequests() {

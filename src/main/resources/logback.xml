@@ -25,7 +25,7 @@
 
     <root level="debug">
         <appender-ref ref="console" />
-        <appender-ref ref="info" />
+        <!-- <appender-ref ref="info" /> -->
     </root>
 </configuration>
 

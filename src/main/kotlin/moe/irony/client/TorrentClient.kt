@@ -34,7 +34,7 @@ class TorrentClient(
     private val peerId: String
     private val peers: Channel<Peer> // we use a channel instead of a shared queue as they acts the same behavior
 
-    private val workers: MutableList<Worker> = mutableListOf()
+    private val workers: MutableList<Pair<Worker, Job>> = mutableListOf()
 
     init {
         /* Generate a random 20-byte peer ID for the client as described in the convention
@@ -54,7 +54,7 @@ class TorrentClient(
     suspend fun terminate() {
         List(workersNum) { Peer("0.0.0.0", "DUMMY", 0) }
             .forEach { peers.send(it) }
-        workers.forEach(Worker::stop)
+        workers.map { it.first }.forEach(Worker::stop)
     }
 
     @OptIn(ExperimentalCoroutinesApi::class)
@@ -107,14 +107,16 @@ class TorrentClient(
         // Launch worker coroutines to do the job
         workers.addAll((1 .. workersNum)
             .map { Worker(peers, peerId, infoHash, pieceManager) }
-            .onEach {
-                CoroutineScope(Dispatchers.IO).launch {
+            .map {
+                val job = CoroutineScope(Dispatchers.IO).launch {
                     it.start()
                 }
-            })
-            .also {
-                println("Download intialized...")
+                it to job
             }
+            .also {
+                Log.info { "Download initialized..." }
+                println("Download initialized...")
+            })
 
         var lastPeerQuery = System.currentTimeMillis()
 
@@ -136,6 +138,20 @@ class TorrentClient(
                     interval = newInterval
                 }
                 lastPeerQuery = System.currentTimeMillis()
+            }
+
+            workers.removeAll { it.second.isCancelled }
+                .also {
+                    if (it) Log.debug { "Removed some inactive coroutines" }
+                }
+            if (workers.size < workersNum) {
+                workers += Worker(peers, peerId, infoHash, pieceManager)
+                    .let {
+                        val job = CoroutineScope(Dispatchers.IO).launch {
+                            it.start()
+                        }
+                        it to job
+                    }
             }
         }
 
