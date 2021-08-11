@@ -16,12 +16,16 @@ data class ByteStringLiteral(val content: String): Bencode() {
     override fun encode(): String = content.length.toString() + SEPARATOR + content
 }
 data class ListLiteral(val of: MutableList<Bencode>): Bencode() {
+
+    constructor(vararg elem: Bencode): this(elem.toMutableList())
     override fun encode(): String {
         return of.map { it.encode() }
             .joinToString("", prefix = "$LIST_MARKER", postfix = "$ENDING_MARKER")
     }
 }
 data class DictionaryLiteral(val of: MutableMap<Bencode, Bencode>): Bencode() {
+
+    constructor(vararg elem: Pair<Bencode, Bencode>): this(elem.associate { it.first to it.second }.toMutableMap())
     override fun encode(): String {
         return of.entries.map { it.key.encode() + it.value.encode() }
             .joinToString("", prefix = "$DICT_MARKER", postfix = "$ENDING_MARKER")

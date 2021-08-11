@@ -29,33 +29,33 @@ data class TorrentFile(
     val name: String,
 )
 
-fun DictionaryLiteral.getIntAttr(attr: String): Result<BigInteger> = this.of[ByteStringLiteral(attr)]?.let {
-    when (it) {
-        is IntLiteral -> Result(it.value)
-        else -> null
-    }
-} ?: Result.failure("Cannot get IntAttr $attr from dictionary")
-
-fun DictionaryLiteral.getStringAttr(attr: String): Result<String> = this.of[ByteStringLiteral(attr)]?.let {
-    when (it) {
-        is ByteStringLiteral -> Result(it.content)
-        else -> null
-    }
-} ?: Result.failure("Cannot get StringAttr $attr from dictionary")
-
-fun DictionaryLiteral.getDictAttr(attr: String): Result<DictionaryLiteral> = this.of[ByteStringLiteral(attr)]?.let {
-    when (it) {
-        is DictionaryLiteral -> Result(it)
-        else -> null
-    }
-} ?: Result.failure("Cannot get DictAttr $attr from dictionary")
-
-fun DictionaryLiteral.getListAttr(attr: String): Result<ListLiteral> = this.of[ByteStringLiteral(attr)]?.let {
-    when (it) {
-        is ListLiteral -> Result(it)
-        else -> null
-    }
-} ?: Result.failure("Cannot get ListAttr $attr from dictionary")
+//fun DictionaryLiteral.getIntAttr(attr: String): Result<BigInteger> = this.of[ByteStringLiteral(attr)]?.let {
+//    when (it) {
+//        is IntLiteral -> Result(it.value)
+//        else -> null
+//    }
+//} ?: Result.failure("Cannot get IntAttr $attr from dictionary")
+//
+//fun DictionaryLiteral.getStringAttr(attr: String): Result<String> = this.of[ByteStringLiteral(attr)]?.let {
+//    when (it) {
+//        is ByteStringLiteral -> Result(it.content)
+//        else -> null
+//    }
+//} ?: Result.failure("Cannot get StringAttr $attr from dictionary")
+//
+//fun DictionaryLiteral.getDictAttr(attr: String): Result<DictionaryLiteral> = this.of[ByteStringLiteral(attr)]?.let {
+//    when (it) {
+//        is DictionaryLiteral -> Result(it)
+//        else -> null
+//    }
+//} ?: Result.failure("Cannot get DictAttr $attr from dictionary")
+//
+//fun DictionaryLiteral.getListAttr(attr: String): Result<ListLiteral> = this.of[ByteStringLiteral(attr)]?.let {
+//    when (it) {
+//        is ListLiteral -> Result(it)
+//        else -> null
+//    }
+//} ?: Result.failure("Cannot get ListAttr $attr from dictionary")
 
 fun Result<DictionaryLiteral>.getInfo(): Result<TorrentInfo> =
     this.flatMap { dict ->
