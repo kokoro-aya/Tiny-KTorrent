@@ -1,4 +1,6 @@
 ## Tiny-KTorrent
+[![FOSSA Status](https://app.fossa.com/api/projects/git%2Bgithub.com%2Fkokoro-aya%2FTiny-KTorrent.svg?type=shield)](https://app.fossa.com/projects/git%2Bgithub.com%2Fkokoro-aya%2FTiny-KTorrent?ref=badge_shield)
+
 
 This is a simple BitTorrent client written in Kotlin. The architecture is largely based on [the c++ implementation by ss16118](https://github.com/ss16118/torrent-client-cpp/)
 
@@ -42,3 +44,6 @@ If no argument is supplied or wrong arguments, the help menu will be shown.
 - Retrieve a list of peers from tracker periodically
 - Display download status
 - Download single file with multi coroutines
+
+## License
+[![FOSSA Status](https://app.fossa.com/api/projects/git%2Bgithub.com%2Fkokoro-aya%2FTiny-KTorrent.svg?type=large)](https://app.fossa.com/projects/git%2Bgithub.com%2Fkokoro-aya%2FTiny-KTorrent?ref=badge_large)
